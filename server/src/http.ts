@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { z } from "zod";
 import type { Principal } from "./auth.js";
 import { defaultCampaigns } from "./campaigns.js";
+import { DEPARTMENTS, canManage, departmentOf, isDepartment, isScoped, kindsOf, type Access, type Department } from "./departments.js";
 import { recall } from "./memory.js";
 import { roomTouches } from "./touches.js";
 import type { David } from "./service.js";
@@ -26,7 +27,7 @@ export interface AppDeps {
   clock?: { now: Date; offsetMs: number };
 }
 
-type Vars = { hotel: Hotel; principal: Principal | null };
+type Vars = { hotel: Hotel; principal: Principal | null; access: Access; actual: Access };
 
 const phoneSchema = z.string().transform((v, ctx) => {
   const p = normalizePhone(v);
@@ -39,7 +40,7 @@ export function createApp(deps: AppDeps) {
   const { store, david } = deps;
   const app = new Hono<{ Variables: Vars }>();
 
-  app.use("*", cors({ origin: deps.corsOrigins?.length ? deps.corsOrigins : (deps.demo ? "*" : []), allowHeaders: ["authorization", "content-type", "x-hotel-id"], allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] }));
+  app.use("*", cors({ origin: deps.corsOrigins?.length ? deps.corsOrigins : (deps.demo ? "*" : []), allowHeaders: ["authorization", "content-type", "x-hotel-id", "x-view-as"], allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] }));
   app.onError((err, c) => {
     if (err instanceof z.ZodError) return c.json({ error: err.issues[0]?.message ?? "Invalid input." }, 400);
     console.error("[http]", err);
@@ -91,19 +92,46 @@ export function createApp(deps: AppDeps) {
       if (!hotel) return c.json({ error: "No demo hotel yet." }, 503);
       c.set("hotel", hotel);
       c.set("principal", null);
+      // The demo has no accounts, so the app says who to pretend to be.
+      const as = c.req.header("x-view-as");
+      c.set("actual", { role: "owner", department: null });
+      c.set("access", as === "manager" ? { role: "manager", department: null } : isDepartment(as) ? { role: "staff", department: as } : { role: "owner", department: null });
       return next();
     }
     const token = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
     const principal = token && deps.verify ? await deps.verify(token) : null;
     if (!principal) return c.json({ error: "Please sign in." }, 401);
+    // An invitation is waiting for whoever signs in with that address.
+    if (principal.email) await store.claimInvites(principal.userId, principal.email);
     const hotels = await store.hotelsForUser(principal.userId);
     const wanted = c.req.header("x-hotel-id");
     const hotel = (wanted ? hotels.find((h) => h.id === wanted) : hotels[0]) ?? null;
     if (!hotel) return c.json({ error: "You don't have a hotel yet." }, 403);
     c.set("hotel", hotel);
     c.set("principal", principal);
+    const actual = (await store.staffAccess(principal.userId, hotel.id)) ?? { role: "staff" as const, department: null };
+    c.set("actual", actual);
+    // "View as": an owner or manager can look at the hotel the way a department does. It only ever
+    // narrows what they see; nobody gets more than their own role allows.
+    const lens = c.req.header("x-view-as");
+    c.set("access", canManage(actual) && isDepartment(lens) ? { role: "staff", department: lens } : actual);
     return next();
   });
+
+  // Someone who works one department gets their queue and nothing else: no guest
+  // profiles, messages, campaigns, menu, settings or team.
+  const DEPARTMENT_ROUTES: [string, RegExp][] = [
+    ["GET", /^\/api\/me$/], ["GET", /^\/api\/dashboard$/], ["GET", /^\/api\/requests$/],
+    ["PATCH", /^\/api\/requests\/[^/]+$/], ["POST", /^\/api\/requests\/[^/]+\/square$/],
+  ];
+  app.use("/api/*", async (c, next) => {
+    if (c.req.path === "/api/hotels" && c.req.method === "POST") return next();
+    if (isScoped(c.get("access")) && !DEPARTMENT_ROUTES.some(([m, re]) => m === c.req.method && re.test(c.req.path))) {
+      return c.json({ error: "That isn't part of your department." }, 403);
+    }
+    return next();
+  });
+  const managersOnly = (c: { get: (k: "access") => Access }) => canManage(c.get("access"));
 
   // Creating a hotel is the one call that has no hotel yet, so it does its own sign-in.
   app.post("/api/hotels", async (c) => {
@@ -124,7 +152,7 @@ export function createApp(deps: AppDeps) {
   app.get("/api/me", async (c) => {
     const principal = c.get("principal");
     const hotels = principal ? await store.hotelsForUser(principal.userId) : await store.allHotels();
-    return c.json({ hotel: c.get("hotel"), hotels, user: principal, demo: deps.demo, now: david.clock().toISOString() });
+    return c.json({ hotel: c.get("hotel"), hotels, user: principal, demo: deps.demo, now: david.clock().toISOString(), access: c.get("access"), actualAccess: c.get("actual") });
   });
 
   app.patch("/api/hotel", async (c) => {
@@ -142,7 +170,18 @@ export function createApp(deps: AppDeps) {
   app.get("/api/dashboard", async (c) => {
     const hotel = c.get("hotel");
     const today = localParts(david.clock(), hotel.timezone).date;
-    const [stats, arrivals, urgent] = await Promise.all([
+    const access = c.get("access");
+    const scope = isScoped(access) ? kindsOf(access.department) : undefined;
+    if (scope) {
+      // Their own numbers and their own queue; no arrivals, no guest history.
+      const board = (await store.departmentBoard(hotel.id, today, david.clock())).find((d) => d.department === access.department)!;
+      return c.json({
+        today, scope: access, board,
+        stats: { arrivalsToday: 0, inHouse: 0, departuresToday: 0, openRequests: board.open, urgentRequests: board.urgent, requestsToday: board.doneToday, repeatGuestsInHouse: 0, guestsTotal: 0, memoriesTotal: 0, optedOut: 0 },
+        arrivals: [], urgent: await store.listRequests(hotel.id, { status: ["new", "in_progress"], kinds: scope, limit: 8 }), departments: [],
+      });
+    }
+    const [stats, arrivals, urgent, departments] = await Promise.all([
       store.dashboard(hotel.id, today),
       store.staysBetween(hotel.id, today, today).then(async (stays) => {
         const guests = new Map((await store.guestsByIds(stays.map((s) => s.guestId))).map((g) => [g.id, g]));
@@ -158,21 +197,29 @@ export function createApp(deps: AppDeps) {
         return out;
       }),
       store.listRequests(hotel.id, { status: ["new", "in_progress"], limit: 5 }),
+      store.departmentBoard(hotel.id, today, david.clock()),
     ]);
-    return c.json({ today, stats, arrivals, urgent });
+    return c.json({ today, scope: access, stats, arrivals, urgent, departments });
   });
 
   // Requests
   app.get("/api/requests", async (c) => {
     const status = c.req.query("status")?.split(",").filter((s) => ["new", "in_progress", "done", "cancelled"].includes(s)) as ("new" | "in_progress" | "done" | "cancelled")[] | undefined;
     const kind = REQUEST_KINDS.find((k) => k === c.req.query("kind"));
-    return c.json({ requests: await store.listRequests(c.get("hotel").id, { status: status?.length ? status : undefined, kind }) });
+    const access = c.get("access");
+    const asked = c.req.query("department");
+    // A department only ever gets its own kinds, whatever they ask for.
+    const kinds = isScoped(access) ? kindsOf(access.department) : isDepartment(asked) ? kindsOf(asked) : undefined;
+    return c.json({ requests: await store.listRequests(c.get("hotel").id, { status: status?.length ? status : undefined, kind, kinds }) });
   });
   app.patch("/api/requests/:id", async (c) => {
     const b = z.object({ status: z.enum(["new", "in_progress", "done", "cancelled"]).optional(), priority: z.enum(["normal", "urgent"]).optional(), notify: z.boolean().default(false) }).parse(await c.req.json());
     const hotel = c.get("hotel");
     const existing = await store.request(c.req.param("id"));
     if (!existing || existing.hotelId !== hotel.id) return c.json({ error: "No such request." }, 404);
+    const me = c.get("access");
+    if (isScoped(me) && departmentOf(existing.kind) !== me.department) return c.json({ error: "That request belongs to another department." }, 403);
+    if (isScoped(me) && b.priority) return c.json({ error: "Only a manager can change priority." }, 403);
     if (b.priority) await store.updateRequest(existing.id, { priority: b.priority });
     const updated = b.status ? await david.setRequestStatus(hotel, existing.id, b.status, b.notify) : await store.request(existing.id);
     return c.json({ request: updated });
@@ -185,6 +232,46 @@ export function createApp(deps: AppDeps) {
     const today = localParts(david.clock(), hotel.timezone).date;
     const stay = await store.currentStay(guest.id, today);
     return c.json({ request: await store.createRequest({ hotelId: hotel.id, guestId: guest.id, stayId: stay?.id ?? null, kind: b.kind, summary: b.summary, priority: b.priority, createdBy: "staff", at: david.clock() }) }, 201);
+  });
+
+  // Team: who can see what. Managers and owners only.
+  const teamBody = z.object({ role: z.enum(["manager", "staff"]), department: z.enum(DEPARTMENTS).nullable().default(null) })
+    .refine((b) => b.role === "manager" || b.department !== null, { message: "Choose which department they work in." });
+  app.get("/api/team", async (c) => {
+    if (!managersOnly(c)) return c.json({ error: "Only a manager can see the team." }, 403);
+    return c.json(await store.team(c.get("hotel").id));
+  });
+  app.post("/api/team/invites", async (c) => {
+    if (!managersOnly(c)) return c.json({ error: "Only a manager can invite people." }, 403);
+    const b = z.object({ email: z.string().trim().toLowerCase().email("Enter their email address.").max(200) }).and(teamBody).parse(await c.req.json());
+    const hotel = c.get("hotel");
+    if ((await store.team(hotel.id)).members.some((m) => m.email?.toLowerCase() === b.email)) return c.json({ error: "They're already on the team." }, 400);
+    await store.invite(hotel.id, b.email, b.role, b.role === "manager" ? null : b.department);
+    return c.json(await store.team(hotel.id), 201);
+  });
+  app.delete("/api/team/invites/:id", async (c) => {
+    if (!managersOnly(c)) return c.json({ error: "Only a manager can change the team." }, 403);
+    await store.deleteInvite(c.get("hotel").id, c.req.param("id"));
+    return c.json(await store.team(c.get("hotel").id));
+  });
+  app.patch("/api/team/:userId", async (c) => {
+    if (!managersOnly(c)) return c.json({ error: "Only a manager can change the team." }, 403);
+    const b = teamBody.parse(await c.req.json());
+    const hotel = c.get("hotel");
+    const member = (await store.team(hotel.id)).members.find((m) => m.userId === c.req.param("userId"));
+    if (!member) return c.json({ error: "No such person." }, 404);
+    if (member.role === "owner") return c.json({ error: "The owner's access can't be changed here." }, 400);
+    await store.updateMember(hotel.id, member.userId, { role: b.role, department: b.role === "manager" ? null : b.department });
+    return c.json(await store.team(hotel.id));
+  });
+  app.delete("/api/team/:userId", async (c) => {
+    if (!managersOnly(c)) return c.json({ error: "Only a manager can change the team." }, 403);
+    const hotel = c.get("hotel");
+    const member = (await store.team(hotel.id)).members.find((m) => m.userId === c.req.param("userId"));
+    if (!member) return c.json({ error: "No such person." }, 404);
+    if (member.role === "owner") return c.json({ error: "The owner can't be removed." }, 400);
+    await store.removeMember(hotel.id, member.userId);
+    return c.json(await store.team(hotel.id));
   });
 
   // Square
@@ -222,6 +309,8 @@ export function createApp(deps: AppDeps) {
     const hotel = c.get("hotel");
     const existing = await store.request(c.req.param("id"));
     if (!existing || existing.hotelId !== hotel.id) return c.json({ error: "No such request." }, 404);
+    const me = c.get("access");
+    if (isScoped(me) && departmentOf(existing.kind) !== me.department) return c.json({ error: "That request belongs to another department." }, 403);
     return c.json({ request: await david.sendToSquare(hotel, existing) });
   });
 

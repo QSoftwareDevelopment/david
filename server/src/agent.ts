@@ -71,6 +71,7 @@ const ETA: Record<RequestKind, string> = {
   transport: "I've asked the front desk to arrange it and they'll confirm the details with you shortly.",
   late_checkout: "I've asked the front desk and will confirm as soon as I hear back.",
   early_checkin: "I've asked the front desk and will let you know as soon as the room is ready.",
+  restaurant: "I've passed that to the restaurant and they'll confirm your table shortly.",
   other: "I've passed this to the team.",
 };
 
@@ -150,7 +151,7 @@ export class RulesAgent implements Agent {
     if (requests.length) {
       const parts = requests.map((r) => {
         const what = r.items.length ? ` (${r.items.join(", ")})` : "";
-        const label = { room_service: "your room service order", housekeeping: "housekeeping", laundry: "laundry", amenities: "that", maintenance: "the issue", transport: "your transport", late_checkout: "a late check-out", early_checkin: "an early check-in", other: "your request" }[r.kind];
+        const label = { room_service: "your room service order", housekeeping: "housekeeping", laundry: "laundry", amenities: "that", maintenance: "the issue", transport: "your transport", late_checkout: "a late check-out", early_checkin: "an early check-in", restaurant: "your table request", other: "your request" }[r.kind];
         return `${label}${what}`;
       });
       const joined = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0]!;

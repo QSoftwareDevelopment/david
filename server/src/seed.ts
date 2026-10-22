@@ -1,6 +1,7 @@
 import { defaultCampaigns } from "./campaigns.js";
 import type { Store } from "./store.js";
 import { addDays, localParts, zonedInstant } from "./time.js";
+import type { Department } from "./departments.js";
 import type { Hotel } from "./types.js";
 
 /**
@@ -94,6 +95,22 @@ export async function seedDemo(store: Store, now: Date = new Date()): Promise<Ho
   await store.createStay({ hotelId: hotel.id, guestId: jordan.id, arrival: addDays(today, -300), departure: addDays(today, -297), room: "505" });
   await learn(jordan.id, "preference", "temperature", "likes the room cool", "guest");
   await request(jordan.id, js.id, "late_checkout", "Late check-out", [], at(addDays(today, -76), 12));
+
+  // A few more open items so every department has something in its queue.
+  await request(priya.id, ps.id, "laundry", "Laundry: two shirts, pressed", ["shirts"], new Date(now.getTime() - 70 * 60_000), "in_progress");
+  await request(amara.id, a2.id, "restaurant", "Restaurant: table for two tonight at 7:30, a birthday", [], new Date(now.getTime() - 55 * 60_000), "new");
+  await request(sam.id, null, "maintenance", "Maintenance: the desk lamp in 804 flickers", [], new Date(now.getTime() - 3 * 3600_000), "new");
+
+  // The team, so the Team screen has people on it.
+  const team: [string, string, "owner" | "manager" | "staff", Department | null][] = [
+    ["00000000-0000-4000-8000-000000000001", "owner@harbourhouse.ca", "owner", null],
+    ["00000000-0000-4000-8000-000000000002", "concierge@harbourhouse.ca", "manager", null],
+    ["00000000-0000-4000-8000-000000000003", "kitchen@harbourhouse.ca", "staff", "room_service"],
+    ["00000000-0000-4000-8000-000000000004", "host@harbourhouse.ca", "staff", "restaurant"],
+    ["00000000-0000-4000-8000-000000000005", "laundry@harbourhouse.ca", "staff", "laundry"],
+    ["00000000-0000-4000-8000-000000000006", "housekeeping@harbourhouse.ca", "staff", "housekeeping"],
+  ];
+  for (const [id, email, role, department] of team) await store.addStaff(id, hotel.id, email, role, department);
 
   await store.refreshStayStatuses(hotel.id, today);
   return hotel;

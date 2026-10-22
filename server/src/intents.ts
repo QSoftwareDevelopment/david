@@ -29,6 +29,7 @@ export interface Understanding {
 }
 
 const RULES: { kind: RequestKind; re: RegExp }[] = [
+  { kind: "restaurant", re: /\b(book|reserve|reservation|table)\b.{0,40}\b(restaurant|dinner|lunch|brunch|breakfast|table|for (two|three|four|five|six|\d+|us))\b|\b(restaurant|dining room)\b.{0,30}\b(book|reserv|table|tonight|tomorrow|open|seat)|\btable for\b|\bdinner reservation\b|\bbook(ing)? a table\b/i },
   { kind: "late_checkout", re: /\blate\s*check[\s-]*out\b|\bcheck[\s-]*out\s+(later|at\s+\d|around\s+\d)|\bstay\s+(a\s+bit\s+)?later\b/i },
   { kind: "early_checkin", re: /\bearly\s*check[\s-]*in\b|\bcheck[\s-]*in\s+(earlier|early)\b|\barriv(e|ing)\s+early\b/i },
   { kind: "laundry", re: /\blaundry\b|\bdry[\s-]*clean|\bpress(ing)?\s+(my|a|the)\b|\biron(ing)?\s+(my|a|the)\b|\bwash\s+(my|a|some)\b/i },
@@ -84,6 +85,7 @@ const summaryFor = (kind: RequestKind, items: string[], when: string | null, tex
     case "amenities": return `Amenities: ${list || shorten(text)}${w}`;
     case "maintenance": return `Maintenance: ${shorten(text)}`;
     case "transport": return `Transport: ${shorten(text)}${w}`;
+    case "restaurant": return `Restaurant: ${shorten(text)}`;
     case "late_checkout": return `Late check-out${w || ": " + shorten(text)}`;
     case "early_checkin": return `Early check-in${w || ": " + shorten(text)}`;
     default: return shorten(text);
@@ -131,6 +133,8 @@ export function understand(text: string, catalog: Service[]): Understanding {
     if (rule.kind === "housekeeping" && /\b(no|don'?t|do not)\s+(want\s+)?(any\s+)?housekeeping\b/i.test(clean)) continue;
     // "feather-free pillows" is housekeeping, and also matches amenities; keep the first.
     if (rule.kind === "amenities" && seen.has("housekeeping")) continue;
+    // "Dinner reservation" is the restaurant, not room service, unless they say to send it up.
+    if (rule.kind === "room_service" && seen.has("restaurant") && !/\broom service\b|\b(to|in) (my|our) room\b|\bsend (it )?up\b/i.test(clean)) continue;
     seen.add(rule.kind);
     const items = itemsIn(clean, rule.kind, catalog);
     requests.push({

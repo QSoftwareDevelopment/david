@@ -71,6 +71,7 @@ export const REQUEST_KINDS = [
   "transport",
   "late_checkout",
   "early_checkin",
+  "restaurant",
   "other",
 ] as const;
 export type RequestKind = (typeof REQUEST_KINDS)[number];

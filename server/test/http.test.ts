@@ -181,7 +181,7 @@ test("today's arrivals show what the guest asked for and how to make the stay th
   const amara = dash.arrivals.find((a: any) => a.guest.firstName === "Amara");
   assert(amara, "Amara arrives today");
   assert.equal(amara.pastStays, 1);
-  assert.deepEqual(amara.asked.map((r: any) => r.kind).sort(), ["amenities", "room_service"]);
+  assert.deepEqual(amara.asked.map((r: any) => r.kind).sort(), ["amenities", "restaurant", "room_service"]);
   assert.equal(amara.stay.notes, "Celebrating her partner's birthday");
   const touches = amara.touches.map((t: any) => t.text);
   assert.match(touches[0], /Welcome back, Amara\. Your 2nd stay/);

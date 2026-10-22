@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { patch, post } from '@/api/client';
 import type { RequestRow } from '@/api/types';
 import { useFetch } from '@/api/useFetch';
-import { REQUEST_LABEL, timeAgo } from '@/format';
+import { useAuth } from '@/auth/AuthProvider';
+import { DEPARTMENTS, DEPARTMENT_LABEL, REQUEST_LABEL, timeAgo } from '@/format';
 import { colors, font, space } from '@/theme';
 import { Badge, Button, Card, Chip, Empty, Loading, Problem, Row, Screen, Title } from '@/ui/kit';
 
@@ -18,10 +19,15 @@ const FILTERS = [
 /** Everything guests have asked for, in the order staff should do it. */
 export default function Requests() {
   const router = useRouter();
+  const { scoped, access } = useAuth();
+  const params = useLocalSearchParams<{ department?: string }>();
+  const [dept, setDept] = useState<string>('');
+  // Tapping a department on Today lands here already filtered.
+  React.useEffect(() => { setDept(typeof params.department === 'string' ? params.department : ''); }, [params.department]);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>(FILTERS[0]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const { data, error, loading, reload } = useFetch<{ requests: RequestRow[] }>(`/api/requests${filter.status ? `?status=${filter.status}` : ''}`, { pollMs: 15_000 });
+  const { data, error, loading, reload } = useFetch<{ requests: RequestRow[] }>(`/api/requests?${[filter.status && `status=${filter.status}`, !scoped && dept && `department=${dept}`].filter(Boolean).join('&')}`, { pollMs: 15_000 });
 
   async function move(r: RequestRow, status: 'in_progress' | 'done' | 'cancelled') {
     setBusy(r.id);
@@ -53,12 +59,18 @@ export default function Requests() {
 
   return (
     <Screen onRefresh={reload} refreshing={loading && !!data}>
-      <Title sub={data ? `${data.requests.length} shown` : undefined}>Requests</Title>
+      <Title sub={data ? `${data.requests.length} shown` : undefined}>{scoped && access.department ? `${DEPARTMENT_LABEL[access.department]} requests` : 'Requests'}</Title>
       <Row style={{ flexWrap: 'wrap' }}>
         {FILTERS.map((f) => (
           <Chip key={f.id} label={f.label} on={f.id === filter.id} onPress={() => setFilter(f)} />
         ))}
       </Row>
+      {!scoped ? (
+        <Row style={{ flexWrap: 'wrap' }}>
+          <Chip label="Every department" on={dept === ''} onPress={() => setDept('')} />
+          {DEPARTMENTS.map((d) => <Chip key={d} label={DEPARTMENT_LABEL[d]} on={dept === d} onPress={() => setDept(d)} />)}
+        </Row>
+      ) : null}
       {notice ? <Text style={{ color: colors.muted, marginBottom: space.sm }}>{notice}</Text> : null}
       {error && !data ? <Problem message={error} onRetry={reload} /> : null}
       {!data && !error ? <Loading /> : null}
@@ -67,7 +79,7 @@ export default function Requests() {
         <Card key={r.id} tone={r.priority === 'urgent' && r.status !== 'done' ? 'urgent' : undefined}>
           <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <View style={{ flex: 1, paddingRight: space.sm }}>
-              <Text onPress={() => router.push(`/guest/${r.guestId}`)} style={{ fontWeight: '700', color: colors.text, fontSize: font.md }}>
+              <Text onPress={scoped ? undefined : () => router.push(`/guest/${r.guestId}`)} style={{ fontWeight: '700', color: colors.text, fontSize: font.md }}>
                 {r.guestName}{r.room ? ` · Room ${r.room}` : ''}
               </Text>
               <Text style={{ color: colors.muted, fontSize: font.sm }}>{timeAgo(r.createdAt)} · {r.createdBy === 'david' ? 'logged by David' : 'added by staff'}</Text>

@@ -3,7 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Platform } from 'react-native';
 
 import { ApiError, get, post, setApiSession } from '@/api/client';
-import type { Hotel, Me } from '@/api/types';
+import type { Access, Hotel, Me } from '@/api/types';
 import { supabase } from '@/lib/supabase';
 
 /**
@@ -24,6 +24,17 @@ type Ctx = {
   hotels: Hotel[];
   email: string | null;
   now: Date;
+  /** What this person may see: everything, or one department. */
+  access: Access;
+  /** True for someone who works a single department. */
+  scoped: boolean;
+  /** Who the app is being viewed as: 'self', 'manager' or a department. Owners and managers can switch; the demo can too. */
+  viewAs: string;
+  setViewAs: (role: string) => void;
+  /** Whether this person may switch views (the demo, owners and managers). */
+  canSwitch: boolean;
+  /** The role this person really has, whatever view they are in. */
+  actualRole: Access['role'];
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<{ needsConfirmation: boolean }>;
   signOut: () => Promise<void>;
@@ -52,13 +63,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [hotels, setHotels] = useState<Hotel[]>([]);
   const [now, setNow] = useState(new Date());
   const hotelId = useRef<string | null>(null);
+  const [access, setAccess] = useState<Access>({ role: 'owner', department: null });
+  const [actual, setActual] = useState<Access>({ role: 'owner', department: null });
+  const [viewAs, setViewAsState] = useState('self');
+  const viewAsRef = useRef('self');
 
   useEffect(() => {
     setApiSession({
       getToken: async () => (supabase ? ((await supabase.auth.getSession()).data.session?.access_token ?? null) : null),
       hotelId: () => hotelId.current,
+      viewAs: () => (viewAsRef.current !== 'self' ? viewAsRef.current : null),
     });
-  }, []);
+  }, [demo]);
 
   const load = useCallback(async () => {
     try {
@@ -67,6 +83,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setHotel(me.hotel);
       hotelId.current = me.hotel.id;
       setNow(new Date(me.now));
+      setAccess(me.access ?? { role: 'owner', department: null });
+      setActual(me.actualAccess ?? me.access ?? { role: 'owner', department: null });
       setStatus('signedIn');
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
@@ -110,6 +128,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       hotels,
       email: session?.user.email ?? null,
       now,
+      access,
+      scoped: access.role === 'staff' && access.department !== null,
+      viewAs,
+      actualRole: actual.role,
+      canSwitch: demo || actual.role !== 'staff' || actual.department === null,
+      setViewAs(role) {
+        viewAsRef.current = role;
+        setViewAsState(role);
+        void load();
+      },
       async signIn(email, password) {
         if (!supabase) throw new Error('Sign-in is not configured.');
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
@@ -123,6 +151,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       async signOut() {
         if (supabase) await supabase.auth.signOut();
+        viewAsRef.current = 'self';
+        setViewAsState('self');
         setHotel(null);
         setStatus('signedOut');
       },
@@ -136,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       refresh: load,
     }),
-    [status, demo, hotel, hotels, session, now, load],
+    [status, demo, hotel, hotels, session, now, access, actual, viewAs, load],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

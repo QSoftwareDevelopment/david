@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import type { ColorValue } from 'react-native';
 
+import { useAuth } from '@/auth/AuthProvider';
 import { colors } from '@/theme';
 
 const icon = (name: React.ComponentProps<typeof Ionicons>['name']) =>
@@ -11,12 +12,14 @@ const icon = (name: React.ComponentProps<typeof Ionicons>['name']) =>
   };
 
 export default function TabsLayout() {
+  // A department sees its queue and nothing about guests.
+  const { scoped } = useAuth();
   return (
     <Tabs screenOptions={{ headerShown: false, tabBarActiveTintColor: colors.ink, tabBarInactiveTintColor: colors.muted, tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.line }, tabBarLabelStyle: { fontWeight: '600' } }}>
       <Tabs.Screen name="index" options={{ title: 'Today', tabBarIcon: icon('sunny-outline') }} />
       <Tabs.Screen name="requests" options={{ title: 'Requests', tabBarIcon: icon('checkmark-done-outline') }} />
-      <Tabs.Screen name="guests" options={{ title: 'Guests', tabBarIcon: icon('people-outline') }} />
-      <Tabs.Screen name="messages" options={{ title: 'Messages', tabBarIcon: icon('chatbubbles-outline') }} />
+      <Tabs.Screen name="guests" options={{ title: 'Guests', tabBarIcon: icon('people-outline'), href: scoped ? null : undefined }} />
+      <Tabs.Screen name="messages" options={{ title: 'Messages', tabBarIcon: icon('chatbubbles-outline'), href: scoped ? null : undefined }} />
       <Tabs.Screen name="more" options={{ title: 'More', tabBarIcon: icon('ellipsis-horizontal') }} />
     </Tabs>
   );

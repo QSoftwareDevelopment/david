@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 
+import { useAuth } from '@/auth/AuthProvider';
+
 import { get } from './client';
 
 /**
@@ -10,6 +12,8 @@ import { get } from './client';
  * (the inbox polls; a guest's chat polls faster).
  */
 export function useFetch<T>(path: string | null, opts: { pollMs?: number } = {}) {
+  // Switching view changes what the server returns for the same path, so start over.
+  const { viewAs } = useAuth();
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(path !== null);
@@ -33,7 +37,7 @@ export function useFetch<T>(path: string | null, opts: { pollMs?: number } = {})
         if (alive.current && mine === seq.current) setLoading(false);
       }
     },
-    [path],
+    [path, viewAs],
   );
 
   useEffect(() => {

@@ -1,6 +1,7 @@
 import type { Db } from "./db.js";
 import type { Fact } from "./memory.js";
 import { merge } from "./memory.js";
+import { DEPARTMENTS, DEPARTMENT_LABEL, departmentOf, kindsOf, type Access, type Department, type Role } from "./departments.js";
 import type { SquareCredentials, SquareMenuItem } from "./square.js";
 import type {
   Campaign, CampaignAudience, CampaignKind, Consent, Guest, GuestRequest, Hotel, Memory, Message, MessageAuthor,
@@ -88,8 +89,66 @@ export class Store {
     );
     return rows[0] ? hotelOf(rows[0]) : null;
   }
-  async addStaff(userId: string, hotelId: string, email: string | null, role: "owner" | "staff" = "staff"): Promise<void> {
-    await this.db.query("insert into staff (user_id, hotel_id, role, email) values ($1,$2,$3,$4) on conflict (user_id, hotel_id) do update set role = $3, email = $4", [userId, hotelId, role, email]);
+  async addStaff(userId: string, hotelId: string, email: string | null, role: Role = "staff", department: Department | null = null): Promise<void> {
+    await this.db.query(
+      "insert into staff (user_id, hotel_id, role, email, department) values ($1,$2,$3,$4,$5) on conflict (user_id, hotel_id) do update set role = $3, email = $4, department = $5",
+      [userId, hotelId, role, email, department]);
+  }
+
+  // ── Team ─────────────────────────────────────────────────
+  async staffAccess(userId: string, hotelId: string): Promise<Access | null> {
+    const { rows } = await this.db.query("select role, department from staff where user_id = $1 and hotel_id = $2", [userId, hotelId]);
+    return rows[0] ? { role: rows[0].role as Role, department: (rows[0].department as Department | null) ?? null } : null;
+  }
+  async team(hotelId: string) {
+    const [members, invites] = await Promise.all([
+      this.db.query("select user_id, email, role, department from staff where hotel_id = $1 order by case role when 'owner' then 0 when 'manager' then 1 else 2 end, department nulls first, email", [hotelId]),
+      this.db.query("select id, email, role, department, created_at from staff_invites where hotel_id = $1 order by created_at", [hotelId]),
+    ]);
+    return {
+      members: members.rows.map((r) => ({ userId: r.user_id as string, email: (r.email as string | null) ?? null, role: r.role as Role, department: (r.department as Department | null) ?? null })),
+      invites: invites.rows.map((r) => ({ id: r.id as string, email: r.email as string, role: r.role as Role, department: (r.department as Department | null) ?? null, createdAt: iso(r.created_at) })),
+    };
+  }
+  async invite(hotelId: string, email: string, role: "manager" | "staff", department: Department | null) {
+    await this.db.query(
+      "insert into staff_invites (hotel_id, email, role, department) values ($1,$2,$3,$4) on conflict (hotel_id, email) do update set role = $3, department = $4",
+      [hotelId, email.trim().toLowerCase(), role, department]);
+  }
+  async deleteInvite(hotelId: string, id: string): Promise<void> {
+    await this.db.query("delete from staff_invites where hotel_id = $1 and id = $2", [hotelId, id]);
+  }
+  /** Turn invitations for this address into staff rows. Run when someone signs in. */
+  async claimInvites(userId: string, email: string): Promise<void> {
+    const { rows } = await this.db.query("delete from staff_invites where email = $1 returning hotel_id, role, department", [email.trim().toLowerCase()]);
+    for (const r of rows) {
+      await this.db.query("insert into staff (user_id, hotel_id, role, email, department) values ($1,$2,$3,$4,$5) on conflict (user_id, hotel_id) do nothing", [userId, r.hotel_id, r.role, email.trim().toLowerCase(), r.department ?? null]);
+    }
+  }
+  async updateMember(hotelId: string, userId: string, p: { role: Role; department: Department | null }): Promise<void> {
+    await this.db.query("update staff set role = $3, department = $4 where hotel_id = $1 and user_id = $2", [hotelId, userId, p.role, p.department]);
+  }
+  async removeMember(hotelId: string, userId: string): Promise<void> {
+    await this.db.query("delete from staff where hotel_id = $1 and user_id = $2", [hotelId, userId]);
+  }
+  async ownerCount(hotelId: string): Promise<number> {
+    return ((await this.db.query("select count(*)::int as n from staff where hotel_id = $1 and role = 'owner'", [hotelId])).rows[0]?.n as number) ?? 0;
+  }
+
+  /** The main window: for each department, what is waiting and for how long. */
+  async departmentBoard(hotelId: string, today: string, now: Date) {
+    const { rows } = await this.db.query(
+      `select kind, status, priority, created_at, completed_at from requests
+        where hotel_id = $1 and (status in ('new','in_progress') or (status = 'done' and completed_at >= $2::date))`, [hotelId, today]);
+    return DEPARTMENTS.map((d) => {
+      const mine = rows.filter((r) => departmentOf(r.kind as RequestKind) === d);
+      const open = mine.filter((r) => r.status === "new" || r.status === "in_progress");
+      const oldest = open.reduce<number | null>((o, r) => { const t = new Date(r.created_at as string).getTime(); return o === null || t < o ? t : o; }, null);
+      return {
+        department: d, label: DEPARTMENT_LABEL[d], open: open.length, urgent: open.filter((r) => r.priority === "urgent").length,
+        doneToday: mine.filter((r) => r.status === "done").length, oldestMinutes: oldest === null ? null : Math.max(0, Math.round((now.getTime() - oldest) / 60_000)),
+      };
+    });
   }
 
   // ── Guests ───────────────────────────────────────────────
@@ -223,13 +282,13 @@ export class Store {
     const { rows } = await this.db.query("select * from requests where id = $1", [id]);
     return rows[0] ? requestOf(rows[0]) : null;
   }
-  async listRequests(hotelId: string, opts: { status?: RequestStatus[]; kind?: RequestKind; guestId?: string; limit?: number } = {}) {
+  async listRequests(hotelId: string, opts: { status?: RequestStatus[]; kind?: RequestKind; kinds?: RequestKind[]; guestId?: string; limit?: number } = {}) {
     const { rows } = await this.db.query(
       `select r.*, g.first_name, g.last_name, g.phone, s.room from requests r join guests g on g.id = r.guest_id left join stays s on s.id = r.stay_id
-        where r.hotel_id = $1 and ($2::text[] is null or r.status = any($2)) and ($3::text is null or r.kind = $3) and ($4::uuid is null or r.guest_id = $4)
+        where r.hotel_id = $1 and ($2::text[] is null or r.status = any($2)) and ($3::text is null or r.kind = $3) and ($4::uuid is null or r.guest_id = $4) and ($6::text[] is null or r.kind = any($6))
         order by case r.status when 'new' then 0 when 'in_progress' then 1 else 2 end, (r.priority = 'urgent') desc, r.created_at desc limit $5`,
-      [hotelId, opts.status ?? null, opts.kind ?? null, opts.guestId ?? null, opts.limit ?? 200]);
-    return rows.map((r) => ({ ...requestOf(r), guestName: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.phone as string, room: (r.room as string | null) ?? null }));
+      [hotelId, opts.status ?? null, opts.kind ?? null, opts.guestId ?? null, opts.limit ?? 200, opts.kinds ?? null]);
+    return rows.map((r) => ({ ...requestOf(r), department: departmentOf(r.kind as RequestKind), guestName: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.phone as string, room: (r.room as string | null) ?? null }));
   }
   async updateRequest(id: string, p: { status?: RequestStatus; priority?: "normal" | "urgent"; summary?: string }): Promise<GuestRequest | null> {
     const { rows } = await this.db.query(
@@ -429,6 +488,7 @@ export class Store {
   }
 }
 
+export { kindsOf };
 export const categoryFor = (kind: RequestKind): ServiceCategory | null =>
   kind === "room_service" ? "room_service" : kind === "housekeeping" ? "housekeeping" : kind === "laundry" ? "laundry" : kind === "amenities" ? "amenity" : kind === "transport" ? "transport" : null;
 export type { CampaignKind };

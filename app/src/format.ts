@@ -54,7 +54,19 @@ export const REQUEST_LABEL: Record<string, string> = {
   transport: 'Transport',
   late_checkout: 'Late check-out',
   early_checkin: 'Early check-in',
+  restaurant: 'Restaurant',
   other: 'Other',
+};
+
+export const DEPARTMENTS = ['front_desk', 'room_service', 'restaurant', 'housekeeping', 'laundry', 'maintenance'] as const;
+export type Department = (typeof DEPARTMENTS)[number];
+export const DEPARTMENT_LABEL: Record<Department, string> = {
+  front_desk: 'Front desk',
+  room_service: 'Room service',
+  restaurant: 'Restaurant',
+  housekeeping: 'Housekeeping',
+  laundry: 'Laundry',
+  maintenance: 'Maintenance',
 };
 
 export const MEMORY_LABEL: Record<string, string> = {

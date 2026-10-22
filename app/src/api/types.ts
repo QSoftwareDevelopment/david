@@ -18,7 +18,7 @@ export interface GuestRequest {
   id: string; guestId: string; kind: string; summary: string; status: RequestStatus; priority: 'normal' | 'urgent'; createdBy: 'david' | 'staff'; createdAt: string;
   details: Record<string, unknown>; squareOrderId?: string | null; squareError?: string | null;
 }
-export interface RequestRow extends GuestRequest { guestName: string; room: string | null }
+export interface RequestRow extends GuestRequest { guestName: string; room: string | null; department?: Department }
 export interface Message { id: string; direction: 'in' | 'out'; author: 'guest' | 'david' | 'staff' | 'campaign'; body: string; status: string; createdAt: string }
 export interface Conversation { guestId: string; guestName: string; phone: string; consent: Consent; last: Message; openRequests: number }
 export interface Campaign {
@@ -31,5 +31,14 @@ export interface Dashboard {
   stats: { arrivalsToday: number; inHouse: number; departuresToday: number; openRequests: number; urgentRequests: number; requestsToday: number; repeatGuestsInHouse: number; guestsTotal: number; memoriesTotal: number; optedOut: number };
   arrivals: { stay: Stay; guest: Guest; pastStays: number; memories: Memory[]; asked: GuestRequest[]; touches: { text: string; because: string }[] }[];
   urgent: RequestRow[];
+  scope?: Access;
+  board?: DepartmentStat;
+  departments: DepartmentStat[];
 }
-export interface Me { hotel: Hotel; hotels: Hotel[]; demo: boolean; now: string }
+export type Department = 'front_desk' | 'room_service' | 'restaurant' | 'housekeeping' | 'laundry' | 'maintenance';
+export interface Access { role: 'owner' | 'manager' | 'staff'; department: Department | null }
+export interface DepartmentStat { department: Department; label: string; open: number; urgent: number; doneToday: number; oldestMinutes: number | null }
+export interface TeamMember { userId: string; email: string | null; role: Access['role']; department: Department | null }
+export interface TeamInvite { id: string; email: string; role: Access['role']; department: Department | null; createdAt: string }
+export interface Team { members: TeamMember[]; invites: TeamInvite[] }
+export interface Me { hotel: Hotel; hotels: Hotel[]; demo: boolean; now: string; access: Access; actualAccess?: Access }

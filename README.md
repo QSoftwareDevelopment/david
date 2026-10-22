@@ -16,6 +16,7 @@ mobile app for the business. Everything hotel-specific is new.
 | **Answers guests by text** | Understands room service, housekeeping, laundry, amenities, maintenance, transport, late check-out and early check-in. Replies in the hotel's voice, one to three sentences. |
 | **Logs requests for staff** | Every ask becomes a request with a status (new, in progress, done). Marking one done can text the guest. Urgent and sensitive things are flagged. |
 | **Square for room service** | Connect the hotel's Square: the room service menu and prices come from its catalog, and each confirmed order is sent to Square as an open order with the room, the guest's first name and any allergy on every line. If Square is down, the request and the guest's reply still happen and staff can resend. |
+| **Departments and roles** | One app, several views. The owner or concierge sees the main window: every department's open count, longest wait and urgent items, plus arrivals, guests and messages. Room service, restaurant, laundry, housekeeping, maintenance and front desk staff see only their own queue and can mark requests started or done, with no guest profiles or messages. Owners and managers can switch to any department's view. |
 | **Remembers each guest** | Allergies and diets, pillows, room, coffee, occasions, and habits David notices ("oat flat white, mornings, third stay"). Memories last across stays, say where they came from, and can be hidden by staff. |
 | **Offers, never assumes** | A remembered habit is offered as a question ("your usual oat flat white?"). Allergies travel with every food order to the kitchen. |
 | **Texts first, carefully** | Campaigns by moment in the stay. Only to guests who agreed to texts, never in quiet hours, at most one a day, STOP always honoured. David writes each message from what he remembers, or sends the hotel's exact words. |
@@ -58,7 +59,7 @@ watch the staff app react. **Skip ahead one day** moves the clock and runs the d
 ## Tests
 
 ```bash
-cd server && npm test        # 108 tests: memory, understanding, campaigns, texting rules, the Claude agent
+cd server && npm test        # 121 tests: memory, understanding, campaigns, texting rules, the Claude agent
                              # (scripted), the HTTP API and Twilio signatures, all on in-memory Postgres
 cd app && npm test && npm run typecheck
 ```

@@ -5,8 +5,9 @@ import { Text, View } from 'react-native';
 import type { Dashboard } from '@/api/types';
 import { useFetch } from '@/api/useFetch';
 import { useAuth } from '@/auth/AuthProvider';
-import { fullName, dateShort, nights, REQUEST_LABEL, timeAgo } from '@/format';
+import { fullName, dateShort, nights, DEPARTMENT_LABEL, REQUEST_LABEL, timeAgo } from '@/format';
 import { colors, font, space } from '@/theme';
+import { ViewSwitcher } from '@/ui/ViewSwitcher';
 import { Avatar, Badge, Card, Empty, Loading, Problem, Row, Screen, SectionLabel, Title } from '@/ui/kit';
 
 function Stat({ value, label, tone }: { value: number; label: string; tone?: 'urgent' }) {
@@ -21,29 +22,59 @@ function Stat({ value, label, tone }: { value: number; label: string; tone?: 'ur
 /** Today: who is arriving, what is open, and what David already knows about the people walking in. */
 export default function Today() {
   const router = useRouter();
-  const { hotel, now } = useAuth();
+  const { hotel, now, access, scoped } = useAuth();
   const { data, error, loading, reload } = useFetch<Dashboard>('/api/dashboard', { pollMs: 20_000 });
 
   const greeting = new Date(now).getHours() < 12 ? 'Good morning' : 'Good day';
   return (
     <Screen onRefresh={reload} refreshing={loading && !!data}>
-      <Title sub={data ? dateShort(data.today) : undefined}>{hotel ? hotel.name : greeting}</Title>
+      <Title sub={data ? dateShort(data.today) : undefined}>{scoped && access.department ? DEPARTMENT_LABEL[access.department] : hotel ? hotel.name : greeting}</Title>
+      <ViewSwitcher />
       {error && !data ? <Problem message={error} onRetry={reload} /> : null}
       {!data && !error ? <Loading /> : null}
       {data ? (
         <>
-          <Row style={{ flexWrap: 'wrap', marginHorizontal: -4 }}>
-            <Stat value={data.stats.arrivalsToday} label="Arriving today" />
-            <Stat value={data.stats.inHouse} label="In house" />
-            <Stat value={data.stats.openRequests} label="Open requests" tone="urgent" />
-            <Stat value={data.stats.repeatGuestsInHouse} label="Returning guests" />
-          </Row>
+          {scoped ? (
+            <Row style={{ flexWrap: 'wrap', marginHorizontal: -4 }}>
+              <Stat value={data.stats.openRequests} label="Waiting for you" tone="urgent" />
+              <Stat value={data.board?.urgent ?? 0} label="Urgent" tone="urgent" />
+              <Stat value={data.stats.requestsToday} label="Done today" />
+              <Stat value={data.board?.oldestMinutes ?? 0} label="Longest wait (min)" />
+            </Row>
+          ) : (
+            <Row style={{ flexWrap: 'wrap', marginHorizontal: -4 }}>
+              <Stat value={data.stats.arrivalsToday} label="Arriving today" />
+              <Stat value={data.stats.inHouse} label="In house" />
+              <Stat value={data.stats.openRequests} label="Open requests" tone="urgent" />
+              <Stat value={data.stats.repeatGuestsInHouse} label="Returning guests" />
+            </Row>
+          )}
+
+          {!scoped && data.departments.length > 0 ? (
+            <>
+              <SectionLabel>Departments</SectionLabel>
+              {data.departments.map((d) => (
+                <Card key={d.department} tone={d.urgent > 0 ? 'urgent' : undefined} onPress={() => router.push({ pathname: '/requests', params: { department: d.department } })}>
+                  <Row style={{ justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: '700', color: colors.text, fontSize: font.md }}>{d.label}</Text>
+                      <Text style={{ color: colors.muted, fontSize: font.sm }}>
+                        {d.open === 0 ? 'All clear' : `${d.open} open${d.oldestMinutes != null ? ` · longest wait ${d.oldestMinutes < 60 ? `${d.oldestMinutes} min` : `${Math.floor(d.oldestMinutes / 60)}h ${d.oldestMinutes % 60}m`}` : ''}`}
+                        {d.doneToday > 0 ? ` · ${d.doneToday} done today` : ''}
+                      </Text>
+                    </View>
+                    {d.urgent > 0 ? <Badge label={`${d.urgent} urgent`} tone="danger" /> : d.open === 0 ? <Badge label="Clear" tone="ok" /> : <Badge label={`${d.open}`} tone="warn" />}
+                  </Row>
+                </Card>
+              ))}
+            </>
+          ) : null}
 
           {data.urgent.length > 0 ? (
             <>
-              <SectionLabel>Needs attention</SectionLabel>
+              <SectionLabel>{scoped ? 'Your queue' : 'Needs attention'}</SectionLabel>
               {data.urgent.map((r) => (
-                <Card key={r.id} tone={r.priority === 'urgent' ? 'urgent' : undefined} onPress={() => router.push(`/guest/${r.guestId}`)}>
+                <Card key={r.id} tone={r.priority === 'urgent' ? 'urgent' : undefined} onPress={() => (scoped ? router.push('/requests') : router.push(`/guest/${r.guestId}`))}>
                   <Row style={{ justifyContent: 'space-between' }}>
                     <Text style={{ fontWeight: '700', color: colors.text }}>{r.guestName}{r.room ? ` · ${r.room}` : ''}</Text>
                     <Badge label={r.priority === 'urgent' ? 'Urgent' : REQUEST_LABEL[r.kind] ?? r.kind} tone={r.priority === 'urgent' ? 'danger' : 'info'} />
@@ -55,8 +86,8 @@ export default function Today() {
             </>
           ) : null}
 
-          <SectionLabel>Arriving today</SectionLabel>
-          {data.arrivals.length === 0 ? <Empty title="No arrivals today" body="Guests arriving later this week are under Guests." /> : null}
+          {!scoped ? <SectionLabel>Arriving today</SectionLabel> : null}
+          {!scoped && data.arrivals.length === 0 ? <Empty title="No arrivals today" body="Guests arriving later this week are under Guests." /> : null}
           {data.arrivals.map(({ guest, stay, pastStays, asked, touches }) => {
             const name = fullName(guest);
             return (

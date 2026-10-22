@@ -69,7 +69,23 @@ Room service, and from then on sends each room service order to that location as
 - **Not verified against a real Square account yet.** Test with Sandbox first. Orders are created as open orders; they do not
   take payment, and whether they appear on a kitchen display depends on how the location is set up in Square.
 
-## 6. Before the first real guest
+## 6. Team and departments
+
+Run `supabase/migrations/0003_departments.sql` (after 0001 and 0002). It adds the restaurant request kind, manager and
+department roles for staff, and invitations.
+
+- **Owner**: whoever creates the hotel. **Manager** (the concierge or GM): sees everything and runs the team.
+  **Department staff** (room service, restaurant, housekeeping, laundry, maintenance, front desk): see only that
+  department's requests and can start or finish them. The server enforces this on every call, not just the app.
+- Add people in More → Team by email and department. They get that access the first time they sign in with that
+  address (Supabase email confirmation should be on, so nobody can claim an address they don't own).
+- Owners and managers can look at the hotel as any department from the View as chips on Today and More. It only narrows what
+  they see.
+- Requests are routed by kind: room service, restaurant, housekeeping (also amenities), laundry, maintenance, and front desk
+  (transport, late check-out, early check-in, anything else David escalates).
+- Not built yet: push notifications to a department when a request arrives, and per-department opening hours.
+
+## 7. Before the first real guest
 
 - Add guests with **Guest agreed to receive texts** ticked only when they genuinely agreed at booking.
 - Fill in **Menu & services**: it is the only thing David will offer.

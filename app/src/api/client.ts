@@ -17,7 +17,7 @@ export class ApiError extends Error {
   }
 }
 
-type Session = { getToken: () => Promise<string | null>; hotelId: () => string | null };
+type Session = { getToken: () => Promise<string | null>; hotelId: () => string | null; viewAs?: () => string | null };
 let session: Session = { getToken: async () => null, hotelId: () => null };
 export function setApiSession(s: Session) {
   session = s;
@@ -26,6 +26,7 @@ export function setApiSession(s: Session) {
 export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const token = await session.getToken();
   const hotel = session.hotelId();
+  const role = session.viewAs?.() ?? null;
   let res: Response;
   try {
     res = await fetch(`${API_URL}${path}`, {
@@ -34,6 +35,7 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
         'content-type': 'application/json',
         ...(token ? { authorization: `Bearer ${token}` } : {}),
         ...(hotel ? { 'x-hotel-id': hotel } : {}),
+        ...(role ? { 'x-view-as': role } : {}),
       },
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
     });
