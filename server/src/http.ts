@@ -167,35 +167,41 @@ export function createApp(deps: AppDeps) {
     return c.json({ hotel: await store.updateHotel(c.get("hotel").id, { ...b, smsNumber }) });
   });
 
+  /** Who is arriving today, what they asked for ahead of time, and what would make the stay theirs. */
+  const arrivalsToday = async (hotelId: string, today: string) => {
+    const stays = await store.staysBetween(hotelId, today, today);
+    const guests = new Map((await store.guestsByIds(stays.map((s) => s.guestId))).map((g) => [g.id, g]));
+    const out = [];
+    for (const s of stays.filter((x) => x.arrival === today)) {
+      const g = guests.get(s.guestId);
+      if (!g) continue;
+      const [pastStays, all, asked] = await Promise.all([store.pastStayCount(g.id, today), store.memories(g.id), store.openRequestsOf(g.id)]);
+      const memories = recall(all, david.clock(), 12);
+      out.push({ stay: s, guest: g, pastStays, memories: memories.slice(0, 3), asked, touches: roomTouches({ memories, pastStays, stay: s, firstName: g.firstName, vip: g.vip }) });
+    }
+    return out;
+  };
+
   app.get("/api/dashboard", async (c) => {
     const hotel = c.get("hotel");
     const today = localParts(david.clock(), hotel.timezone).date;
     const access = c.get("access");
     const scope = isScoped(access) ? kindsOf(access.department) : undefined;
     if (scope) {
-      // Their own numbers and their own queue; no arrivals, no guest history.
+      // Their own numbers and their own queue. The front desk also greets the day's arrivals, so it sees those;
+      // nobody else gets guest history.
       const board = (await store.departmentBoard(hotel.id, today, david.clock())).find((d) => d.department === access.department)!;
+      const desk = access.department === "front_desk";
+      const house = desk ? await store.dashboard(hotel.id, today) : null;
       return c.json({
         today, scope: access, board,
-        stats: { arrivalsToday: 0, inHouse: 0, departuresToday: 0, openRequests: board.open, urgentRequests: board.urgent, requestsToday: board.doneToday, repeatGuestsInHouse: 0, guestsTotal: 0, memoriesTotal: 0, optedOut: 0 },
-        arrivals: [], urgent: await store.listRequests(hotel.id, { status: ["new", "in_progress"], kinds: scope, limit: 8 }), departments: [],
+        stats: { arrivalsToday: house?.arrivalsToday ?? 0, inHouse: house?.inHouse ?? 0, departuresToday: house?.departuresToday ?? 0, openRequests: board.open, urgentRequests: board.urgent, requestsToday: board.doneToday, repeatGuestsInHouse: 0, guestsTotal: 0, memoriesTotal: 0, optedOut: 0 },
+        arrivals: desk ? await arrivalsToday(hotel.id, today) : [], urgent: await store.listRequests(hotel.id, { status: ["new", "in_progress"], kinds: scope, limit: 8 }), departments: [],
       });
     }
     const [stats, arrivals, urgent, departments] = await Promise.all([
       store.dashboard(hotel.id, today),
-      store.staysBetween(hotel.id, today, today).then(async (stays) => {
-        const guests = new Map((await store.guestsByIds(stays.map((s) => s.guestId))).map((g) => [g.id, g]));
-        const out = [];
-        for (const s of stays.filter((x) => x.arrival === today)) {
-          const g = guests.get(s.guestId);
-          if (!g) continue;
-          const [pastStays, all, asked] = await Promise.all([store.pastStayCount(g.id, today), store.memories(g.id), store.openRequestsOf(g.id)]);
-          const memories = recall(all, david.clock(), 12);
-          // What they asked for ahead of time, and what we can do to make the stay theirs.
-          out.push({ stay: s, guest: g, pastStays, memories: memories.slice(0, 3), asked, touches: roomTouches({ memories, pastStays, stay: s, firstName: g.firstName, vip: g.vip }) });
-        }
-        return out;
-      }),
+      arrivalsToday(hotel.id, today),
       store.listRequests(hotel.id, { status: ["new", "in_progress"], limit: 5 }),
       store.departmentBoard(hotel.id, today, david.clock()),
     ]);

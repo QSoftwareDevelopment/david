@@ -53,7 +53,7 @@ test("a department sees only its own requests and numbers", async () => {
   assert.deepEqual([...new Set(list.map((r: any) => r.kind))], ["laundry"]);
   const dash = (await laundry("GET", "/api/dashboard")).json;
   assert.equal(dash.stats.openRequests, 1);
-  assert.deepEqual(dash.arrivals, []);
+  assert.deepEqual(dash.arrivals, [], "only the front desk sees arrivals");
   assert.deepEqual(dash.departments, []);
   assert(dash.urgent.every((r: any) => r.kind === "laundry"));
   // Asking for someone else's queue doesn't work.
@@ -152,4 +152,19 @@ test("an owner or manager can view the hotel as a department, which only ever na
   const other = (await call("chef", "/api/requests?status=new,in_progress", "laundry")).json.requests;
   assert(other.every((r: any) => r.kind === "room_service"), "still only their own department");
   assert.deepEqual((await call("chef", "/api/me", "laundry")).json.access, { role: "staff", department: "room_service" });
+});
+
+test("the front desk sees today's arrivals, with what they asked for and how to make the stay theirs", async () => {
+  const d = await demoApp();
+  const dash = (await d.as("front_desk")("GET", "/api/dashboard")).json;
+  const amara = dash.arrivals.find((a: any) => a.guest.firstName === "Amara");
+  assert(amara, "Amara arrives today");
+  assert(amara.asked.length >= 2);
+  assert.match(amara.touches[0].text, /Welcome back, Amara/);
+  assert.equal(dash.stats.arrivalsToday, 1);
+  assert.deepEqual(dash.departments, [], "still no view of other departments");
+  assert.equal((await d.as("front_desk")("GET", "/api/guests")).status, 403, "guest profiles stay closed");
+  for (const other of ["laundry", "restaurant", "room_service", "housekeeping", "maintenance"]) {
+    assert.deepEqual((await d.as(other)("GET", "/api/dashboard")).json.arrivals, [], `${other} sees no arrivals`);
+  }
 });

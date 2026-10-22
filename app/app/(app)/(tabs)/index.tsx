@@ -25,6 +25,8 @@ export default function Today() {
   const { hotel, now, access, scoped } = useAuth();
   const { data, error, loading, reload } = useFetch<Dashboard>('/api/dashboard', { pollMs: 20_000 });
 
+  // The front desk greets the day's arrivals, so it sees them; other departments don't.
+  const desk = scoped && access.department === 'front_desk';
   const greeting = new Date(now).getHours() < 12 ? 'Good morning' : 'Good day';
   return (
     <Screen onRefresh={reload} refreshing={loading && !!data}>
@@ -38,8 +40,8 @@ export default function Today() {
             <Row style={{ flexWrap: 'wrap', marginHorizontal: -4 }}>
               <Stat value={data.stats.openRequests} label="Waiting for you" tone="urgent" />
               <Stat value={data.board?.urgent ?? 0} label="Urgent" tone="urgent" />
-              <Stat value={data.stats.requestsToday} label="Done today" />
-              <Stat value={data.board?.oldestMinutes ?? 0} label="Longest wait (min)" />
+              {desk ? <Stat value={data.stats.arrivalsToday} label="Arriving today" /> : <Stat value={data.stats.requestsToday} label="Done today" />}
+              {desk ? <Stat value={data.stats.inHouse} label="In house" /> : <Stat value={data.board?.oldestMinutes ?? 0} label="Longest wait (min)" />}
             </Row>
           ) : (
             <Row style={{ flexWrap: 'wrap', marginHorizontal: -4 }}>
@@ -86,12 +88,12 @@ export default function Today() {
             </>
           ) : null}
 
-          {!scoped ? <SectionLabel>Arriving today</SectionLabel> : null}
-          {!scoped && data.arrivals.length === 0 ? <Empty title="No arrivals today" body="Guests arriving later this week are under Guests." /> : null}
+          {!scoped || desk ? <SectionLabel>Arriving today</SectionLabel> : null}
+          {(!scoped || desk) && data.arrivals.length === 0 ? <Empty title="No arrivals today" body="Guests arriving later this week are under Guests." /> : null}
           {data.arrivals.map(({ guest, stay, pastStays, asked, touches }) => {
             const name = fullName(guest);
             return (
-              <Card key={stay.id} onPress={() => router.push(`/guest/${guest.id}`)}>
+              <Card key={stay.id} onPress={scoped ? undefined : () => router.push(`/guest/${guest.id}`)}>
                 <Row>
                   <Avatar name={name} vip={guest.vip} />
                   <View style={{ marginLeft: space.md, flex: 1 }}>
