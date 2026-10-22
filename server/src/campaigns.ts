@@ -24,10 +24,10 @@ export const KIND_LABEL: Record<CampaignKind, string> = {
 export function defaultCampaigns(hotelId: string): Omit<Campaign, "id">[] {
   const base = { hotelId, enabled: true, messageMode: "generated" as const, template: "", guidance: "", audience: {} };
   return [
-    { ...base, name: "Before you arrive", kind: "pre_arrival", offsetDays: -3, sendHour: 10, guidance: "Ask if there is anything they'd like prepared: room preferences, a dinner booking, flowers, airport pickup." },
+    { ...base, name: "Before you arrive", kind: "pre_arrival", offsetDays: -3, sendHour: 10, guidance: "Ask if there is anything they'd like prepared: dietary needs, room preferences, a dinner booking, flowers, airport pickup. Also ask roughly what time they expect to arrive." },
     { ...base, name: "Arrival day", kind: "arrival_day", offsetDays: 0, sendHour: 11, guidance: "Let them know the room will be ready at check-in time and ask if they want anything set up." },
-    { ...base, name: "How's your stay?", kind: "mid_stay", offsetDays: 1, sendHour: 17, guidance: "Check in lightly. Offer housekeeping, laundry or a late dinner." },
-    { ...base, name: "Thank you", kind: "post_stay", offsetDays: 1, sendHour: 11, guidance: "Thank them, ask one open question about how it went, and mention that we will remember what they liked." },
+    { ...base, name: "How's your stay?", kind: "mid_stay", offsetDays: 1, sendHour: 17, guidance: "Check in lightly. Ask them to rate their stay so far from 1 to 10, and offer housekeeping, laundry or a late dinner." },
+    { ...base, name: "Thank you", kind: "post_stay", offsetDays: 1, sendHour: 11, guidance: "Thank them, ask them to rate their stay from 1 to 10, and mention that we will remember what they liked." },
     { ...base, name: "We'd love to have you back", kind: "win_back", offsetDays: 75, sendHour: 11, audience: { repeatOnly: false }, guidance: "Warm and short. Mention something we remember about them. Invite them to reply to plan a return." },
   ];
 }

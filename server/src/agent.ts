@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { fillTemplate } from "./campaigns.js";
 import { understand, type ProposedRequest } from "./intents.js";
+import { etaWords, isLateEta } from "./arrivals.js";
 import { describe, isReliable, type Fact } from "./memory.js";
 import type { Campaign, Guest, GuestRequest, Hotel, Memory, Message, RequestKind, Service, Stay } from "./types.js";
 import { MEMORY_KINDS, REQUEST_KINDS } from "./types.js";
@@ -81,7 +82,7 @@ const hi = (g: Guest) => (first(g) ? `${first(g)}` : "there");
 const nm = (g: Guest) => (first(g) ? `, ${first(g)}` : "");
 const dietaryWords = (m: Pick<Memory, "key" | "value">) => (m.key === "allergy" ? `${m.value} allergy` : m.value);
 const itemOf = (value: string) => value.split(",")[0]!.trim();
-const signoff = (h: Hotel) => (h.signature ? ` ${h.signature}` : "");
+export const signoff = (h: Hotel) => (h.signature ? ` ${h.signature}` : "");
 
 /** The memory that makes a message feel like it was written for this guest. */
 export function hookFor(memories: Memory[], now: Date, prefer: string[] = []): string | null {
@@ -162,6 +163,14 @@ export class RulesAgent implements Agent {
       return { reply: line + signoff(ctx.hotel), requests, facts, escalate: false, source: "rules" };
     }
 
+    if (u.eta) {
+      const late = isLateEta(u.eta);
+      return {
+        reply: `Thank you${who}, I've noted that you'll arrive around ${etaWords(u.eta)}. ${late ? "I'll let our night team know so someone is there to welcome you." : "We'll have everything ready for you."}${acknowledgeFacts(facts)}${signoff(ctx.hotel)}`,
+        requests, facts, escalate: false, source: "rules",
+      };
+    }
+
     if (facts.length) {
       return { reply: `Thank you${who}.${acknowledgeFacts(facts)}${signoff(ctx.hotel)}`, requests, facts, escalate: false, source: "rules" };
     }
@@ -206,17 +215,17 @@ export class RulesAgent implements Agent {
       const hook = hookFor(ctx.memories, ctx.now, ["pillows", "coffee", "room", "temperature"]);
       switch (c.kind) {
         case "pre_arrival":
-          text = `Hi ${name}, it's David at ${hotel.name}. ${repeat ? "Welcome back, we're delighted you're returning" : "We're looking forward to welcoming you"} on ${dateWords}. ${hook ?? "Is there anything you'd like us to prepare before you arrive?"} Tell me about any room preferences, a dinner booking, flowers or airport pickup, and I'll take care of it.`;
+          text = `Hi ${name}, it's David at ${hotel.name}. ${repeat ? "Welcome back, we're delighted you're returning" : "We're looking forward to welcoming you"} on ${dateWords}. ${hook ?? "Is there anything you'd like us to prepare before you arrive?"} Tell me about any dietary needs, room preferences or a dinner booking, and roughly what time you'll arrive, and I'll take care of it.`;
           break;
         case "arrival_day":
           text = `Good morning ${name}! Your room at ${hotel.name} will be ready from ${hotel.checkinTime}. ${hook ?? "Is there anything you'd like set up for your arrival?"}`;
           break;
         case "mid_stay":
-          text = `Hi ${name}, David here. How is your stay going? I'm happy to arrange housekeeping, laundry or a late dinner. Just text me.`;
+          text = `Hi ${name}, David here. On a scale of 1 to 10, how is your stay so far? And if there's anything I can arrange, housekeeping, laundry or a late dinner, just text me.`;
           break;
         case "post_stay": {
           const remembered = hotelLine(ctx.memories);
-          text = `Thank you for staying with ${hotel.name}, ${name}. I hope it was wonderful. How did we do? ${remembered ? `I've made a note that ${remembered}, so it's ready next time.` : "Tell me anything we could do better and I'll make sure it's remembered."}`;
+          text = `Thank you for staying with ${hotel.name}, ${name}. I hope it was wonderful. On a scale of 1 to 10, how was your stay? ${remembered ? `I've made a note that ${remembered}, so it's ready next time.` : "Tell me anything we could do better and I'll make sure it's remembered."}`;
           break;
         }
         case "win_back": {
@@ -404,7 +413,7 @@ ${open}`;
       const res = await this.client.messages.create({
         model: this.model,
         max_tokens: 300,
-        system: `You write the text messages David, the SMS concierge of ${ctx.hotel.name}, sends to guests first. Voice: ${ctx.hotel.tone}. Write ONE message, at most 300 characters, plain text, no markdown, no emoji, in the guest's language (${ctx.guest.language}). Sound like a person who remembers them. Use at most one remembered detail, only if it fits, and phrase habits as an offer, never an assumption. Never invent offers, prices or policies. Output only the message.`,
+        system: `You write the text messages David, the SMS concierge of ${ctx.hotel.name}, sends to guests first. Voice: ${ctx.hotel.tone}. Write ONE message, at most 300 characters, plain text, no markdown, no emoji, in the guest's language (${ctx.guest.language}). Sound like a person who remembers them. Use at most one remembered detail, only if it fits, and phrase habits as an offer, never an assumption. Never invent offers, prices or policies. If the guest says when they will arrive, acknowledge the time. Output only the message.`,
         messages: [{
           role: "user",
           content: `Moment: ${c.kind.replace("_", " ")} (${c.name}).\nGuest: ${ctx.guest.firstName ?? "guest"}; previous stays: ${ctx.pastStays}.\nStay: arrives ${ctx.stay.arrival}, departs ${ctx.stay.departure}${ctx.stay.room ? `, room ${ctx.stay.room}` : ""}.\nHotel check-in ${ctx.hotel.checkinTime}.\nOwner's guidance: ${c.guidance || "(none)"}\nStarting point: ${c.template || "(none)"}\nRemembered:\n${memories}`,

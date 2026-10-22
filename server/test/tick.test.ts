@@ -16,7 +16,7 @@ test("the pre-arrival text goes out on its day, once, and says how to stop", asy
   const w = await world({ now: NOW, withCampaigns: true });
   const { g } = await guestWithStay(w);
   const r = await w.david.runTick(w.hotel.id);
-  assert.deepEqual(r, { sent: 1, skipped: 0, failed: 0 });
+  assert.deepEqual(r, { sent: 1, skipped: 0, failed: 0, reminded: 0, escalated: 0, briefed: 0 });
   assert.equal(w.sms.sent.length, 1);
   assert.match(w.sms.sent[0]!.body, /Hi Sam/);
   assert.match(w.sms.sent[0]!.body, /Test Hotel/);

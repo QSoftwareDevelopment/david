@@ -17,6 +17,8 @@ mobile app for the business. Everything hotel-specific is new.
 | **Logs requests for staff** | Every ask becomes a request with a status (new, in progress, done). Marking one done can text the guest. Urgent and sensitive things are flagged. |
 | **Square for room service** | Connect the hotel's Square: the room service menu and prices come from its catalog, and each confirmed order is sent to Square as an open order with the room, the guest's first name and any allergy on every line. If Square is down, the request and the guest's reply still happen and staff can resend. |
 | **Departments and roles** | One app, several views. The owner or concierge sees the main window: every department's open count, longest wait and urgent items, plus arrivals, guests and messages. Room service, restaurant, laundry, housekeeping, maintenance and front desk staff see only their own queue and can mark requests started or done, with no guest profiles or messages. Owners and managers can switch to any department's view. |
+| **Tells your team where they already look** | Each request goes to its department's phone (a text) and/or a Slack or Teams webhook. If nobody picks it up in time, David nudges the department once, then tells the manager once. The manager also gets a short morning briefing: who is arriving, what they asked for, who is late. Staff never have to open the app. |
+| **Asks how it's going** | Pre-arrival text collects dietary needs and arrival time (a late arrival warns the night desk). A 1 to 10 check-in mid-stay and after: 9 or 10 gets your review link, 7 or 8 gets "what could we do better", 6 or lower goes straight to the duty manager. |
 | **Remembers each guest** | Allergies and diets, pillows, room, coffee, occasions, and habits David notices ("oat flat white, mornings, third stay"). Memories last across stays, say where they came from, and can be hidden by staff. |
 | **Offers, never assumes** | A remembered habit is offered as a question ("your usual oat flat white?"). Allergies travel with every food order to the kitchen. |
 | **Texts first, carefully** | Campaigns by moment in the stay. Only to guests who agreed to texts, never in quiet hours, at most one a day, STOP always honoured. David writes each message from what he remembers, or sends the hotel's exact words. |
@@ -59,7 +61,7 @@ watch the staff app react. **Skip ahead one day** moves the clock and runs the d
 ## Tests
 
 ```bash
-cd server && npm test        # 121 tests: memory, understanding, campaigns, texting rules, the Claude agent
+cd server && npm test        # 141 tests: memory, understanding, campaigns, texting rules, the Claude agent
                              # (scripted), the HTTP API and Twilio signatures, all on in-memory Postgres
 cd app && npm test && npm run typecheck
 ```

@@ -189,3 +189,10 @@ test("today's arrivals show what the guest asked for and how to make the stay th
   assert(touches.includes("Handwritten note for their birthday."));
   assert(touches.some((t: string) => /usual: oat flat white/.test(t)));
 });
+
+test("browsers are allowed to PUT (Square and Alerts settings use it)", async () => {
+  const d = await demoApp();
+  const res = await d.app.request("/api/alerts/laundry", { method: "OPTIONS", headers: { origin: "http://localhost:8090", "access-control-request-method": "PUT", "access-control-request-headers": "content-type,x-view-as" } });
+  assert.match(res.headers.get("access-control-allow-methods") ?? "", /PUT/);
+  assert.match(res.headers.get("access-control-allow-headers") ?? "", /x-view-as/i);
+});

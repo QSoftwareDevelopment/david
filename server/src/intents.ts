@@ -19,6 +19,35 @@ export interface ProposedRequest {
   when: string | null;
 }
 
+/**
+ * When a guest says they'll arrive, as HH:MM local. "around 11pm", "landing at 9:30 pm",
+ * "we'll get in about midnight". A bare 8 to 11 with no am/pm is ambiguous, so it isn't guessed.
+ */
+export function etaIn(text: string): string | null {
+  const t = text.toLowerCase();
+  if (/\b(?:arriv\w*|land\w*|get(?:ting)? in|check(?:ing)?[ -]?in|be there|reach\w*|come|coming)\b[^.?!\n]{0,40}\bmidnight\b/.test(t)) return "00:00";
+  const m = t.match(/\b(?:arriv\w*|land\w*|get(?:ting)? in|check(?:ing)?[ -]?in|be there|reach\w*|come|coming)\b[^.?!\n]{0,40}?\b(?:at|around|about|by|near|after|~)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?/);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const min = m[2] ? Number(m[2]) : 0;
+  if (min > 59 || h > 24) return null;
+  const suffix = m[3]?.[0];
+  if (suffix === "p") h = h === 12 ? 12 : h + 12;
+  else if (suffix === "a") h = h === 12 ? 0 : h;
+  else if (h >= 13) { /* 24-hour clock */ }
+  else if (h === 12) h = 12;
+  else if (h >= 1 && h <= 7) h += 12; // "arriving at 3" is the afternoon
+  else return null; // 8 to 11 with no am/pm: could be either
+  if (h === 24) h = 0;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+/** A bare score in answer to "how is everything, 1 to 10?": "9", "8/10", "10 out of 10". */
+export function ratingIn(text: string): number | null {
+  const m = text.match(/^\s*(10|[0-9])\s*(?:\/\s*10|out of 10)?\s*[.!]*\s*$/i);
+  return m ? Number(m[1]) : null;
+}
+
 export interface Understanding {
   requests: ProposedRequest[];
   facts: Fact[];
@@ -26,6 +55,8 @@ export interface Understanding {
   escalate: boolean;
   /** A short greeting or thanks with nothing to do. */
   smallTalk: boolean;
+  /** When they said they'll arrive, if they did. */
+  eta: string | null;
 }
 
 const RULES: { kind: RequestKind; re: RegExp }[] = [
@@ -161,5 +192,6 @@ export function understand(text: string, catalog: Service[]): Understanding {
   const facts = factsIn(clean);
   const escalate = COMPLAINT.test(clean);
   const smallTalk = requests.length === 0 && facts.length === 0 && !escalate && THANKS.test(clean);
-  return { requests, facts, escalate, smallTalk };
+  const eta = etaIn(clean);
+  return { requests, facts, escalate, smallTalk: smallTalk && !eta, eta };
 }

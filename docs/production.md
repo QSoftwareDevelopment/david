@@ -85,7 +85,24 @@ department roles for staff, and invitations.
   (transport, late check-out, early check-in, anything else David escalates).
 - Not built yet: push notifications to a department when a request arrives, and per-department opening hours.
 
-## 7. Before the first real guest
+## 7. Alerts, briefing and ratings
+
+Run `supabase/migrations/0004_alerts_and_feedback.sql`. Then in the app: More, Alerts.
+
+- For each department (and "Manager") enter the phone that should get a text and/or a webhook URL. Slack: create an
+  Incoming Webhook and paste its URL. Teams and anything else that accepts a JSON `{"text": ...}` post also work.
+  Webhooks must be public https addresses; the server refuses internal ones. Use "Send a test" to check.
+- The manager number also receives escalations and the morning briefing. Set the hour in Hotel settings (default 7am, hotel time).
+- Reminders: a request nobody has started is nudged once to its department after half the time promised to the guest
+  (10 minutes at least), and once to the manager when the promise is up. These ride on the same `/cron/tick`, so keep it
+  running every 10 minutes or so. Staff who handle things by phone should still tap Start or Done in the app, otherwise the
+  request will keep looking untouched. That is the one habit this asks of them.
+- Texts to department phones go out from the hotel's Twilio number as ordinary messages. They are not guest campaigns,
+  so quiet hours don't apply; use a number that expects them.
+- Ratings: the mid-stay and thank-you campaigns ask for a 1 to 10. Existing hotels keep the wording they already have;
+  edit those two campaigns (or reset to the new defaults) so they ask. Add your review link under Hotel settings.
+
+## 8. Before the first real guest
 
 - Add guests with **Guest agreed to receive texts** ticked only when they genuinely agreed at booking.
 - Fill in **Menu & services**: it is the only thing David will offer.

@@ -12,6 +12,10 @@ export interface Hotel {
   quietEnd: number;
   checkinTime: string;
   checkoutTime: string;
+  /** Where happy guests are sent to leave a review. */
+  reviewUrl?: string | null;
+  /** Local hour the manager's morning briefing goes out. */
+  briefingHour?: number;
   /** Never includes the access token. */
   square?: { connected: boolean; locationId: string | null; environment: "production" | "sandbox"; syncedAt: string | null };
 }
@@ -42,6 +46,8 @@ export interface Stay {
   partySize: number;
   status: StayStatus;
   notes: string | null;
+  /** When they told us they'd arrive, local time as HH:MM. */
+  eta?: string | null;
 }
 
 export const MEMORY_KINDS = ["preference", "habit", "dietary", "occasion", "dislike", "contact"] as const;
@@ -93,6 +99,9 @@ export interface GuestRequest {
   completedAt: string | null;
   squareOrderId?: string | null;
   squareError?: string | null;
+  notifiedAt?: string | null;
+  remindedAt?: string | null;
+  escalatedAt?: string | null;
 }
 
 export type MessageAuthor = "guest" | "david" | "staff" | "campaign";

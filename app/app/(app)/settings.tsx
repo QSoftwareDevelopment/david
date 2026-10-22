@@ -18,6 +18,8 @@ export default function Settings() {
   const [quietEnd, setQuietEnd] = useState('8');
   const [checkin, setCheckin] = useState('15:00');
   const [checkout, setCheckout] = useState('11:00');
+  const [reviewUrl, setReviewUrl] = useState('');
+  const [briefing, setBriefing] = useState('7');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -25,13 +27,14 @@ export default function Settings() {
     if (!hotel) return;
     setName(hotel.name); setTone(hotel.tone); setSignature(hotel.signature); setNumber(hotel.smsNumber ?? '');
     setQuietStart(String(hotel.quietStart)); setQuietEnd(String(hotel.quietEnd)); setCheckin(hotel.checkinTime); setCheckout(hotel.checkoutTime);
+    setReviewUrl(hotel.reviewUrl ?? ''); setBriefing(String(hotel.briefingHour ?? 7));
   }, [hotel]);
 
   async function save() {
     setBusy(true);
     setMsg(null);
     try {
-      await patch('/api/hotel', { name: name.trim(), tone: tone.trim(), signature: signature.trim(), smsNumber: number.trim() || null, quietStart: Number(quietStart), quietEnd: Number(quietEnd), checkinTime: checkin, checkoutTime: checkout });
+      await patch('/api/hotel', { name: name.trim(), tone: tone.trim(), signature: signature.trim(), smsNumber: number.trim() || null, quietStart: Number(quietStart), quietEnd: Number(quietEnd), checkinTime: checkin, checkoutTime: checkout, reviewUrl: reviewUrl.trim() || null, briefingHour: Number(briefing) });
       await refresh();
       setMsg({ ok: true, text: 'Saved.' });
     } catch (e) {
@@ -63,6 +66,11 @@ export default function Settings() {
         <Text style={{ width: space.md }} />
         <Field label="Check-out" value={checkout} onChangeText={setCheckout} style={{ width: 120 }} />
       </Row>
+      <SectionLabel>Feedback</SectionLabel>
+      <Field label="Review link" value={reviewUrl} onChangeText={setReviewUrl} autoCapitalize="none" autoCorrect={false} placeholder="https://g.page/r/your-hotel/review" />
+      <Text style={{ color: colors.muted, marginTop: -space.sm, marginBottom: space.md, fontSize: font.sm }}>When a guest rates their stay 9 or 10 after they leave, David sends them here. Anyone who scores 6 or lower is passed to your duty manager instead.</Text>
+      <Field label="Morning briefing at (hour, 0 to 23)" value={briefing} onChangeText={setBriefing} keyboardType="number-pad" style={{ width: 120 }} />
+      <Text style={{ color: colors.muted, marginTop: -space.sm, marginBottom: space.md, fontSize: font.sm }}>The manager gets a short text each morning: who is arriving, what they asked for, who is late. Set the manager's number under More, Alerts.</Text>
       {msg ? <Text style={{ color: msg.ok ? colors.ok : colors.danger, marginBottom: space.sm }} accessibilityRole={msg.ok ? 'text' : 'alert'}>{msg.text}</Text> : null}
       <Button label="Save changes" loading={busy} onPress={save} />
     </Screen>

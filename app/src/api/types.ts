@@ -4,6 +4,7 @@ export type RequestStatus = 'new' | 'in_progress' | 'done' | 'cancelled';
 export interface Hotel {
   id: string; name: string; slug: string; timezone: string; smsNumber: string | null; tone: string; signature: string;
   quietStart: number; quietEnd: number; checkinTime: string; checkoutTime: string;
+  reviewUrl?: string | null; briefingHour?: number;
   square?: SquareStatus;
 }
 export interface SquareStatus { connected: boolean; locationId: string | null; environment: 'production' | 'sandbox'; syncedAt: string | null }
@@ -12,7 +13,7 @@ export interface Guest {
   consent: Consent; vip: boolean; notes: string | null; createdAt: string;
 }
 export interface GuestRow extends Guest { stayCount: number; lastArrival: string | null; openRequests: number; memoryCount: number }
-export interface Stay { id: string; guestId: string; room: string | null; arrival: string; departure: string; partySize: number; status: 'booked' | 'in_house' | 'departed' | 'cancelled'; notes: string | null }
+export interface Stay { id: string; guestId: string; room: string | null; arrival: string; departure: string; partySize: number; status: 'booked' | 'in_house' | 'departed' | 'cancelled'; notes: string | null; eta?: string | null }
 export interface Memory { id: string; guestId: string; kind: string; key: string; value: string; confidence: number; evidence: number; source: 'guest' | 'observed' | 'staff'; hidden: boolean; lastSeen: string }
 export interface GuestRequest {
   id: string; guestId: string; kind: string; summary: string; status: RequestStatus; priority: 'normal' | 'urgent'; createdBy: 'david' | 'staff'; createdAt: string;

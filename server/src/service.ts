@@ -1,12 +1,14 @@
 import { planDue } from "./campaigns.js";
-import type { Agent, AgentContext } from "./agent.js";
+import { signoff, type Agent, type AgentContext } from "./agent.js";
+import { Alerts } from "./alerts.js";
+import { isLateEta } from "./arrivals.js";
 import { habitsFrom, recall } from "./memory.js";
-import type { ProposedRequest } from "./intents.js";
+import { etaIn, ratingIn, type ProposedRequest } from "./intents.js";
 import { commandOf, helpReply, isRestart, normalizePhone, startReply, stopReply, trimForSms, type SmsProvider } from "./sms.js";
 import { HttpSquare, type SquareFactory } from "./square.js";
 import type { Store } from "./store.js";
 import { addDays, localParts } from "./time.js";
-import type { Guest, GuestRequest, Hotel, RequestStatus } from "./types.js";
+import type { Guest, GuestRequest, Hotel, RequestStatus, Stay } from "./types.js";
 
 /**
  * Everything David does, in one place: take a text, answer it, log what the
@@ -34,7 +36,42 @@ export class David {
     readonly clock: () => Date = () => new Date(),
     /** How to reach a hotel's Square. Tests and the demo pass a recording one. */
     readonly square: SquareFactory = (c) => new HttpSquare(c),
-  ) {}
+    fetchImpl: typeof fetch = fetch,
+  ) {
+    this.alerts = new Alerts(store, sms, clock, fetchImpl);
+  }
+
+  /** Tells the kitchen phone, the Slack channel, the duty manager. */
+  readonly alerts: Alerts;
+
+  private nameOf(g: Guest): string {
+    return [g.firstName, g.lastName].filter(Boolean).join(" ") || g.phone;
+  }
+
+  /** "9" in answer to "how is your stay, 1 to 10?": thank them, send the happy ones to review, bring in a person for the unhappy. */
+  private async handleRating(hotel: Hotel, guest: Guest, stay: Stay | null, score: number, moment: "mid_stay" | "post_stay", now: Date): Promise<InboundResult> {
+    await this.store.addFeedback({ hotelId: hotel.id, guestId: guest.id, stayId: stay?.id ?? null, moment, score, at: now });
+    const who = guest.firstName ? `, ${guest.firstName}` : "";
+    const requests: GuestRequest[] = [];
+    let reply: string;
+    if (score >= 9) {
+      reply = moment === "post_stay" && hotel.reviewUrl
+        ? `Thank you${who}, that means a lot. If you have a minute, a review helps us more than anything: ${hotel.reviewUrl}`
+        : `Wonderful to hear${who}, thank you. Is there anything I can add to make ${moment === "post_stay" ? "your next stay" : "the rest of your stay"} even better?`;
+    } else if (score >= 7) {
+      reply = `Thank you${who}. What's one thing we could have done better? I'll make sure the right person hears it.`;
+    } else {
+      reply = `I'm sorry it hasn't been what you hoped${who}. I've asked our duty manager to reach out to you personally.`;
+      const made = await this.store.createRequest({
+        hotelId: hotel.id, guestId: guest.id, stayId: stay?.id ?? null, kind: "other", summary: `Needs a person: guest rated their ${moment === "post_stay" ? "stay" : "stay so far"} ${score}/10`,
+        details: { escalation: true, rating: score }, priority: "urgent", at: now,
+      });
+      requests.push(made);
+      await this.alerts.newRequest(hotel, made, this.nameOf(guest), stay?.room ?? null);
+    }
+    await this.deliver(hotel, guest, reply + signoff(hotel), "david");
+    return { duplicate: false, guestId: guest.id, reply, requests, escalated: score <= 6, source: "rules" };
+  }
 
   /**
    * Send a room service request to the hotel's Square as an open order.
@@ -136,6 +173,16 @@ export class David {
     }
 
     const today = localParts(now, hotel.timezone).date;
+
+    // A bare number straight after a "how is everything?" text is the answer to it.
+    const score = ratingIn(body);
+    if (score !== null) {
+      const last = await this.store.lastCampaignText(guest.id);
+      if (last && (last.kind === "mid_stay" || last.kind === "post_stay") && now.getTime() - last.at.getTime() < 72 * 3600_000) {
+        return this.handleRating(hotel, guest, await this.store.currentStay(guest.id, today), score, last.kind, now);
+      }
+    }
+
     const [stay, memories, thread, catalog, open, pastStays] = await Promise.all([
       this.store.currentStay(guest.id, today),
       this.store.memories(guest.id),
@@ -158,11 +205,24 @@ export class David {
         details: { items: r.items, when: r.when, original: body },
         priority: r.urgent ? "urgent" : "normal", at: now,
       });
-      created.push(await this.sendToSquare(hotel, made));
+      const sent = await this.sendToSquare(hotel, made);
+      created.push(sent);
+      await this.alerts.newRequest(hotel, sent, this.nameOf(guest), stay?.room ?? null);
     }
     if (result.escalate) {
       const already = open.find((o) => o.kind === "other" && o.priority === "urgent");
-      if (!already) created.push(await this.store.createRequest({ hotelId: hotel.id, guestId: guest.id, stayId: stay?.id ?? null, kind: "other", summary: `Needs a person: "${body.slice(0, 200)}"`, details: { escalation: true, original: body }, priority: "urgent", at: now }));
+      if (!already) {
+        const made = await this.store.createRequest({ hotelId: hotel.id, guestId: guest.id, stayId: stay?.id ?? null, kind: "other", summary: `Needs a person: "${body.slice(0, 200)}"`, details: { escalation: true, original: body }, priority: "urgent", at: now });
+        created.push(made);
+        await this.alerts.newRequest(hotel, made, this.nameOf(guest), stay?.room ?? null);
+      }
+    }
+
+    // They told us when they'll arrive: keep it with the stay, and warn the night desk if it's late.
+    const eta = etaIn(body);
+    if (eta && stay && stay.arrival >= today && stay.eta !== eta) {
+      await this.store.setStayEta(stay.id, eta);
+      if (isLateEta(eta)) await this.alerts.lateArrival(hotel, this.nameOf(guest), eta, stay.room);
     }
 
     // Remember what they said, and what they keep doing.
@@ -206,12 +266,12 @@ export class David {
   }
 
   /** Send every campaign message that is due. Safe to call as often as you like. */
-  async runTick(hotelId?: string): Promise<{ sent: number; skipped: number; failed: number }> {
-    const totals = { sent: 0, skipped: 0, failed: 0 };
+  async runTick(hotelId?: string): Promise<{ sent: number; skipped: number; failed: number; reminded: number; escalated: number; briefed: number }> {
+    const totals = { sent: 0, skipped: 0, failed: 0, reminded: 0, escalated: 0, briefed: 0 };
     const hotels = hotelId ? [await this.store.hotel(hotelId)].filter((h): h is Hotel => !!h) : await this.store.allHotels();
     for (const hotel of hotels) {
       const r = await this.tickHotel(hotel);
-      totals.sent += r.sent; totals.skipped += r.skipped; totals.failed += r.failed;
+      totals.sent += r.sent; totals.skipped += r.skipped; totals.failed += r.failed; totals.reminded += r.reminded; totals.escalated += r.escalated; totals.briefed += r.briefed;
     }
     return totals;
   }
@@ -220,8 +280,12 @@ export class David {
     const now = this.clock();
     const today = localParts(now, hotel.timezone).date;
     await this.store.refreshStayStatuses(hotel.id, today);
+    // The staff side of the tick: nudge what's been sitting, and send the morning briefing.
+    const { reminded, escalated } = await this.alerts.remind(hotel);
+    const briefed = (await this.alerts.briefing(hotel)) ? 1 : 0;
+    const none = { sent: 0, skipped: 0, failed: 0, reminded, escalated, briefed };
     const campaigns = (await this.store.campaigns(hotel.id)).filter((c) => c.enabled);
-    if (campaigns.length === 0) return { sent: 0, skipped: 0, failed: 0 };
+    if (campaigns.length === 0) return none;
 
     const stays = await this.store.staysBetween(hotel.id, addDays(today, -400), addDays(today, 70));
     const guests = new Map((await this.store.guestsByIds([...new Set(stays.map((s) => s.guestId))])).map((g) => [g.id, g]));
@@ -233,7 +297,7 @@ export class David {
     }
 
     const { due, skipped } = planDue({ now, hotel, campaigns, stays: withGuests, sent: await this.store.sendKeys(hotel.id), lastOutbound: await this.store.lastOutboundMap(hotel.id) });
-    const out = { sent: 0, skipped: 0, failed: 0 };
+    const out = { ...none };
 
     for (const s of skipped) {
       if (s.retry) continue;

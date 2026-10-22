@@ -14,6 +14,7 @@ export default function AppLayout() {
       <Stack.Screen name="campaigns" options={{ title: 'Campaigns' }} />
       <Stack.Screen name="campaign/[id]" options={{ title: 'Campaign' }} />
       <Stack.Screen name="services" options={{ title: 'Menu & services' }} />
+      <Stack.Screen name="alerts" options={{ title: 'Alerts' }} />
       <Stack.Screen name="team" options={{ title: 'Team' }} />
       <Stack.Screen name="square" options={{ title: 'Square' }} />
       <Stack.Screen name="settings" options={{ title: 'Hotel settings' }} />

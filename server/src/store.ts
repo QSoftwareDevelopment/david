@@ -15,6 +15,7 @@ const day = (v: unknown): string => (v instanceof Date ? v.toISOString().slice(0
 const hotelOf = (r: Row): Hotel => ({
   id: r.id, name: r.name, slug: r.slug, timezone: r.timezone, smsNumber: r.sms_number, tone: r.tone, signature: r.signature,
   quietStart: r.quiet_start, quietEnd: r.quiet_end, checkinTime: r.checkin_time, checkoutTime: r.checkout_time,
+  reviewUrl: r.review_url ?? null, briefingHour: r.briefing_hour ?? 7,
   square: { connected: !!(r.square_access_token && r.square_location_id), locationId: r.square_location_id ?? null, environment: r.square_environment ?? "production", syncedAt: r.square_synced_at ? iso(r.square_synced_at) : null },
 });
 const guestOf = (r: Row): Guest => ({
@@ -23,7 +24,7 @@ const guestOf = (r: Row): Guest => ({
 });
 const stayOf = (r: Row): Stay => ({
   id: r.id, hotelId: r.hotel_id, guestId: r.guest_id, room: r.room, arrival: day(r.arrival), departure: day(r.departure),
-  partySize: r.party_size, status: r.status, notes: r.notes,
+  partySize: r.party_size, status: r.status, notes: r.notes, eta: r.eta ?? null,
 });
 const memoryOf = (r: Row): Memory => ({
   id: r.id, guestId: r.guest_id, kind: r.kind, key: r.key, value: r.value, confidence: Number(r.confidence), evidence: r.evidence,
@@ -34,6 +35,7 @@ const requestOf = (r: Row): GuestRequest => ({
   details: (r.details ?? {}) as Record<string, unknown>, status: r.status, priority: r.priority, createdBy: r.created_by,
   createdAt: iso(r.created_at), updatedAt: iso(r.updated_at), completedAt: r.completed_at ? iso(r.completed_at) : null,
   squareOrderId: r.square_order_id ?? null, squareError: r.square_error ?? null,
+  notifiedAt: r.notified_at ? iso(r.notified_at) : null, remindedAt: r.reminded_at ? iso(r.reminded_at) : null, escalatedAt: r.escalated_at ? iso(r.escalated_at) : null,
 });
 const messageOf = (r: Row): Message => ({
   id: r.id, hotelId: r.hotel_id, guestId: r.guest_id, direction: r.direction, author: r.author, body: r.body, status: r.status,
@@ -48,6 +50,12 @@ const serviceOf = (r: Row): Service => ({
   priceCents: r.price_cents, availableFrom: r.available_from, availableUntil: r.available_until, active: r.active,
   squareVariationId: r.square_variation_id ?? null,
 });
+
+export interface Contact {
+  department: Department | "manager";
+  smsNumber: string | null;
+  webhookUrl: string | null;
+}
 
 export class Store {
   constructor(readonly db: Db) {}
@@ -80,12 +88,13 @@ export class Store {
     );
     return hotelOf(rows[0]!);
   }
-  async updateHotel(id: string, p: Partial<Pick<Hotel, "name" | "timezone" | "smsNumber" | "tone" | "signature" | "quietStart" | "quietEnd" | "checkinTime" | "checkoutTime">>): Promise<Hotel | null> {
+  async updateHotel(id: string, p: Partial<Pick<Hotel, "name" | "timezone" | "smsNumber" | "tone" | "signature" | "quietStart" | "quietEnd" | "checkinTime" | "checkoutTime" | "reviewUrl" | "briefingHour">>): Promise<Hotel | null> {
     const { rows } = await this.db.query(
       `update hotels set name = coalesce($2, name), timezone = coalesce($3, timezone), sms_number = case when $4::boolean then $5 else sms_number end,
          tone = coalesce($6, tone), signature = coalesce($7, signature), quiet_start = coalesce($8, quiet_start), quiet_end = coalesce($9, quiet_end),
-         checkin_time = coalesce($10, checkin_time), checkout_time = coalesce($11, checkout_time) where id = $1 returning *`,
-      [id, p.name ?? null, p.timezone ?? null, p.smsNumber !== undefined, p.smsNumber ?? null, p.tone ?? null, p.signature ?? null, p.quietStart ?? null, p.quietEnd ?? null, p.checkinTime ?? null, p.checkoutTime ?? null],
+         checkin_time = coalesce($10, checkin_time), checkout_time = coalesce($11, checkout_time),
+         review_url = case when $12::boolean then $13 else review_url end, briefing_hour = coalesce($14, briefing_hour) where id = $1 returning *`,
+      [id, p.name ?? null, p.timezone ?? null, p.smsNumber !== undefined, p.smsNumber ?? null, p.tone ?? null, p.signature ?? null, p.quietStart ?? null, p.quietEnd ?? null, p.checkinTime ?? null, p.checkoutTime ?? null, p.reviewUrl !== undefined, p.reviewUrl ?? null, p.briefingHour ?? null],
     );
     return rows[0] ? hotelOf(rows[0]) : null;
   }
@@ -93,6 +102,55 @@ export class Store {
     await this.db.query(
       "insert into staff (user_id, hotel_id, role, email, department) values ($1,$2,$3,$4,$5) on conflict (user_id, hotel_id) do update set role = $3, email = $4, department = $5",
       [userId, hotelId, role, email, department]);
+  }
+
+  // ── Alerts: where each department hears about things ─────
+  async contacts(hotelId: string): Promise<Contact[]> {
+    const { rows } = await this.db.query("select department, sms_number, webhook_url from department_contacts where hotel_id = $1", [hotelId]);
+    return rows.map((r) => ({ department: r.department as Contact["department"], smsNumber: (r.sms_number as string | null) ?? null, webhookUrl: (r.webhook_url as string | null) ?? null }));
+  }
+  async setContact(hotelId: string, c: Contact): Promise<void> {
+    if (!c.smsNumber && !c.webhookUrl) {
+      await this.db.query("delete from department_contacts where hotel_id = $1 and department = $2", [hotelId, c.department]);
+      return;
+    }
+    await this.db.query(
+      "insert into department_contacts (hotel_id, department, sms_number, webhook_url) values ($1,$2,$3,$4) on conflict (hotel_id, department) do update set sms_number = $3, webhook_url = $4",
+      [hotelId, c.department, c.smsNumber, c.webhookUrl]);
+  }
+  async markRequest(id: string, field: "notified_at" | "reminded_at" | "escalated_at", at: Date): Promise<void> {
+    await this.db.query(`update requests set ${field} = $2::timestamptz where id = $1`, [id, at.toISOString()]);
+  }
+  /** Requests nobody has picked up yet, with who and where, for reminders. */
+  async untouchedRequests(hotelId: string) {
+    const { rows } = await this.db.query(
+      `select r.*, g.first_name, g.last_name, g.phone, s.room from requests r join guests g on g.id = r.guest_id left join stays s on s.id = r.stay_id
+        where r.hotel_id = $1 and r.status = 'new' order by r.created_at`, [hotelId]);
+    return rows.map((r) => ({ ...requestOf(r), guestName: [r.first_name, r.last_name].filter(Boolean).join(" ") || (r.phone as string), room: (r.room as string | null) ?? null }));
+  }
+  async setStayEta(stayId: string, eta: string | null): Promise<void> {
+    await this.db.query("update stays set eta = $2 where id = $1", [stayId, eta]);
+  }
+  async addFeedback(input: { hotelId: string; guestId: string; stayId: string | null; moment: "mid_stay" | "post_stay"; score: number; at: Date }): Promise<void> {
+    await this.db.query("insert into feedback (hotel_id, guest_id, stay_id, moment, score, created_at) values ($1,$2,$3,$4,$5,$6::timestamptz)", [input.hotelId, input.guestId, input.stayId, input.moment, input.score, input.at.toISOString()]);
+  }
+  /** The last campaign text David sent this guest, if there is one, so a bare "9" can be read as an answer to it. */
+  async lastCampaignText(guestId: string): Promise<{ kind: string; at: Date } | null> {
+    const { rows } = await this.db.query(
+      `select c.kind, m.created_at from messages m join campaigns c on c.id = m.campaign_id
+        where m.guest_id = $1 and m.direction = 'out' order by m.created_at desc limit 1`, [guestId]);
+    return rows[0] ? { kind: rows[0].kind as string, at: new Date(rows[0].created_at as string) } : null;
+  }
+  async feedbackSince(hotelId: string, since: Date) {
+    const { rows } = await this.db.query("select score, moment from feedback where hotel_id = $1 and created_at >= $2::timestamptz", [hotelId, since.toISOString()]);
+    return rows.map((r) => ({ score: r.score as number, moment: r.moment as string }));
+  }
+  async setLastBriefing(hotelId: string, date: string): Promise<void> {
+    await this.db.query("update hotels set last_briefing_date = $2::date where id = $1", [hotelId, date]);
+  }
+  async lastBriefing(hotelId: string): Promise<string | null> {
+    const { rows } = await this.db.query("select last_briefing_date from hotels where id = $1", [hotelId]);
+    return rows[0]?.last_briefing_date ? day(rows[0].last_briefing_date) : null;
   }
 
   // ── Team ─────────────────────────────────────────────────

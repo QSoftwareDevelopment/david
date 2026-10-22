@@ -10,6 +10,9 @@ import { colors, font, fonts, space } from '@/theme';
 import { ViewSwitcher } from '@/ui/ViewSwitcher';
 import { Avatar, Badge, Card, Empty, Loading, Problem, Row, Screen, SectionLabel, Title } from '@/ui/kit';
 
+const isLate = (eta: string) => { const h = Number(eta.slice(0, 2)); return h >= 22 || h < 5; };
+const etaLabel = (eta: string) => { const [h, m] = eta.split(':').map(Number) as [number, number]; return `${h % 12 === 0 ? 12 : h % 12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${h < 12 ? 'am' : 'pm'}`; };
+
 function Stat({ value, label, tone }: { value: number; label: string; tone?: 'urgent' }) {
   return (
     <View style={{ width: '47.5%', flexGrow: 1, backgroundColor: colors.card, borderRadius: 20, borderWidth: 1, borderColor: tone === 'urgent' && value > 0 ? colors.danger : colors.line, padding: space.md, margin: 4 }}>
@@ -98,9 +101,12 @@ export default function Today() {
                   <Avatar name={name} vip={guest.vip} />
                   <View style={{ marginLeft: space.md, flex: 1 }}>
                     <Text style={{ fontWeight: '700', fontSize: font.md, color: colors.text }}>{name}</Text>
-                    <Text style={{ color: colors.muted, fontSize: font.sm }}>{nights(stay.arrival, stay.departure)} nights · party of {stay.partySize}</Text>
+                    <Text style={{ color: colors.muted, fontSize: font.sm }}>{nights(stay.arrival, stay.departure)} nights · party of {stay.partySize}{stay.eta ? ` · arriving ~${etaLabel(stay.eta)}` : ''}</Text>
                   </View>
-                  {pastStays > 0 ? <Badge label={`Stay ${pastStays + 1}`} tone="brass" /> : <Badge label="First stay" tone="info" />}
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    {pastStays > 0 ? <Badge label={`Stay ${pastStays + 1}`} tone="brass" /> : <Badge label="First stay" tone="info" />}
+                    {stay.eta && isLate(stay.eta) ? <Badge label="Late arrival" tone="warn" /> : null}
+                  </View>
                 </Row>
                 {asked.length > 0 ? (
                   <View style={{ marginTop: space.md }}>

@@ -4,8 +4,8 @@ import { z } from "zod";
 import type { Principal } from "./auth.js";
 import { defaultCampaigns } from "./campaigns.js";
 import { DEPARTMENTS, canManage, departmentOf, isDepartment, isScoped, kindsOf, type Access, type Department } from "./departments.js";
-import { recall } from "./memory.js";
-import { roomTouches } from "./touches.js";
+import { safeWebhookUrl } from "./alerts.js";
+import { arrivalsOn } from "./arrivals.js";
 import type { David } from "./service.js";
 import { EMPTY_TWIML, normalizePhone, validTwilioSignature, type RecordingSms } from "./sms.js";
 import type { Store } from "./store.js";
@@ -40,7 +40,7 @@ export function createApp(deps: AppDeps) {
   const { store, david } = deps;
   const app = new Hono<{ Variables: Vars }>();
 
-  app.use("*", cors({ origin: deps.corsOrigins?.length ? deps.corsOrigins : (deps.demo ? "*" : []), allowHeaders: ["authorization", "content-type", "x-hotel-id", "x-view-as"], allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] }));
+  app.use("*", cors({ origin: deps.corsOrigins?.length ? deps.corsOrigins : (deps.demo ? "*" : []), allowHeaders: ["authorization", "content-type", "x-hotel-id", "x-view-as"], allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] }));
   app.onError((err, c) => {
     if (err instanceof z.ZodError) return c.json({ error: err.issues[0]?.message ?? "Invalid input." }, 400);
     console.error("[http]", err);
@@ -160,27 +160,17 @@ export function createApp(deps: AppDeps) {
       name: z.string().trim().min(1).max(120).optional(), timezone: z.string().optional(), tone: z.string().max(300).optional(), signature: z.string().max(80).optional(),
       smsNumber: z.string().nullable().optional(), quietStart: z.number().int().min(0).max(23).optional(), quietEnd: z.number().int().min(0).max(23).optional(),
       checkinTime: z.string().regex(/^\d{2}:\d{2}$/).optional(), checkoutTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+      reviewUrl: z.string().trim().max(500).nullable().optional(), briefingHour: z.number().int().min(0).max(23).optional(),
     }).parse(await c.req.json());
+    if (b.reviewUrl) { try { if (new URL(b.reviewUrl).protocol !== "https:") throw new Error(); } catch { return c.json({ error: "The review link should start with https://" }, 400); } }
+    if (b.reviewUrl === "") b.reviewUrl = null;
     if (b.timezone) { try { new Intl.DateTimeFormat("en", { timeZone: b.timezone }); } catch { return c.json({ error: "Unknown time zone." }, 400); } }
     const smsNumber = b.smsNumber === undefined ? undefined : b.smsNumber === null || b.smsNumber === "" ? null : normalizePhone(b.smsNumber);
     if (b.smsNumber && !smsNumber) return c.json({ error: "That doesn't look like a phone number." }, 400);
     return c.json({ hotel: await store.updateHotel(c.get("hotel").id, { ...b, smsNumber }) });
   });
 
-  /** Who is arriving today, what they asked for ahead of time, and what would make the stay theirs. */
-  const arrivalsToday = async (hotelId: string, today: string) => {
-    const stays = await store.staysBetween(hotelId, today, today);
-    const guests = new Map((await store.guestsByIds(stays.map((s) => s.guestId))).map((g) => [g.id, g]));
-    const out = [];
-    for (const s of stays.filter((x) => x.arrival === today)) {
-      const g = guests.get(s.guestId);
-      if (!g) continue;
-      const [pastStays, all, asked] = await Promise.all([store.pastStayCount(g.id, today), store.memories(g.id), store.openRequestsOf(g.id)]);
-      const memories = recall(all, david.clock(), 12);
-      out.push({ stay: s, guest: g, pastStays, memories: memories.slice(0, 3), asked, touches: roomTouches({ memories, pastStays, stay: s, firstName: g.firstName, vip: g.vip }) });
-    }
-    return out;
-  };
+  const arrivalsToday = (hotelId: string, today: string) => arrivalsOn(store, david.clock(), hotelId, today);
 
   app.get("/api/dashboard", async (c) => {
     const hotel = c.get("hotel");
@@ -237,7 +227,35 @@ export function createApp(deps: AppDeps) {
     if (!guest || guest.hotelId !== hotel.id) return c.json({ error: "No such guest." }, 404);
     const today = localParts(david.clock(), hotel.timezone).date;
     const stay = await store.currentStay(guest.id, today);
-    return c.json({ request: await store.createRequest({ hotelId: hotel.id, guestId: guest.id, stayId: stay?.id ?? null, kind: b.kind, summary: b.summary, priority: b.priority, createdBy: "staff", at: david.clock() }) }, 201);
+    const made = await store.createRequest({ hotelId: hotel.id, guestId: guest.id, stayId: stay?.id ?? null, kind: b.kind, summary: b.summary, priority: b.priority, createdBy: "staff", at: david.clock() });
+    await david.alerts.newRequest(hotel, made, [guest.firstName, guest.lastName].filter(Boolean).join(" ") || guest.phone, stay?.room ?? null);
+    return c.json({ request: made }, 201);
+  });
+
+  // Alerts: where each department hears about things. Owners and managers only.
+  const alertKeys = [...DEPARTMENTS, "manager"] as const;
+  const alertView = async (hotelId: string) => {
+    const have = new Map((await store.contacts(hotelId)).map((c) => [c.department, c]));
+    return { contacts: alertKeys.map((d) => have.get(d) ?? { department: d, smsNumber: null, webhookUrl: null }), briefingHour: (await store.hotel(hotelId))?.briefingHour ?? 7 };
+  };
+  app.get("/api/alerts", async (c) => c.json(await alertView(c.get("hotel").id)));
+  app.put("/api/alerts/:department", async (c) => {
+    const department = alertKeys.find((d) => d === c.req.param("department"));
+    if (!department) return c.json({ error: "No such department." }, 404);
+    const b = z.object({ smsNumber: z.string().trim().max(40).nullable().default(null), webhookUrl: z.string().trim().max(500).nullable().default(null) }).parse(await c.req.json());
+    const smsNumber = b.smsNumber ? normalizePhone(b.smsNumber) : null;
+    if (b.smsNumber && !smsNumber) return c.json({ error: "That doesn't look like a phone number." }, 400);
+    const webhookUrl = b.webhookUrl || null;
+    if (webhookUrl && !safeWebhookUrl(webhookUrl)) return c.json({ error: "The webhook needs to be a public https:// address, like a Slack incoming webhook." }, 400);
+    await store.setContact(c.get("hotel").id, { department, smsNumber, webhookUrl });
+    return c.json(await alertView(c.get("hotel").id));
+  });
+  app.post("/api/alerts/:department/test", async (c) => {
+    const department = alertKeys.find((d) => d === c.req.param("department"));
+    if (!department) return c.json({ error: "No such department." }, 404);
+    const hotel = c.get("hotel");
+    const sent = await david.alerts.tell(hotel, department, `Test from David at ${hotel.name}: this is where ${department === "manager" ? "escalations and the morning briefing" : "new requests for this department"} will arrive.`);
+    return c.json({ sent });
   });
 
   // Team: who can see what. Managers and owners only.

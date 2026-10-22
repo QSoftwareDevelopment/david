@@ -75,3 +75,27 @@ test("a dish that is only on the hotel's menu is still understood as room servic
   assert.deepEqual(u.requests[0]!.items, ["Truffle linguine"]);
   assert.equal(understand("I love linguine", menu).requests.length, 0, "only the exact menu name counts");
 });
+
+import { etaIn, ratingIn } from "../src/intents.js";
+
+test("it hears when a guest says they'll arrive", () => {
+  assert.equal(etaIn("We'll be arriving around 11pm"), "23:00");
+  assert.equal(etaIn("landing at 9:30 pm so probably there by 11"), "21:30");
+  assert.equal(etaIn("we get in about midnight"), "00:00");
+  assert.equal(etaIn("Arriving at 3, can we check in early?"), "15:00", "a bare 1 to 7 is the afternoon");
+  assert.equal(etaIn("checking in around 10:15 am"), "10:15");
+  assert.equal(etaIn("I'll arrive at 21:45"), "21:45");
+  assert.equal(etaIn("arriving at 9"), null, "a bare 8 to 11 could be either, so it isn't guessed");
+  assert.equal(etaIn("can I get extra towels at 9pm"), null, "only about arriving");
+});
+
+test("it reads a bare score as an answer to 'how is everything?'", () => {
+  assert.equal(ratingIn("9"), 9);
+  assert.equal(ratingIn(" 10 "), 10);
+  assert.equal(ratingIn("8/10"), 8);
+  assert.equal(ratingIn("7 out of 10!"), 7);
+  assert.equal(ratingIn("0"), 0);
+  assert.equal(ratingIn("11"), null);
+  assert.equal(ratingIn("room 9"), null);
+  assert.equal(ratingIn("9 towels please"), null);
+});

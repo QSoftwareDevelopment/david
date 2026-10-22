@@ -70,6 +70,7 @@ export async function seedDemo(store: Store, now: Date = new Date()): Promise<Ho
   const amara = await guest("+14165550166", "Amara", "Okoye");
   const a1 = await store.createStay({ hotelId: hotel.id, guestId: amara.id, arrival: addDays(today, -120), departure: addDays(today, -117), room: "715" });
   const a2 = await store.createStay({ hotelId: hotel.id, guestId: amara.id, arrival: today, departure: addDays(today, 3), partySize: 2, notes: "Celebrating her partner's birthday" });
+  await store.setStayEta(a2.id, "23:15");
   for (const d of [0, 1]) await request(amara.id, a1.id, "room_service", "Room service: oat flat white", ["oat flat white"], at(addDays(today, -120 + d), 8, 5));
   await learn(amara.id, "preference", "pillows", "feather-free pillows", "guest");
   await learn(amara.id, "occasion", "birthday", "here for a birthday", "guest");
