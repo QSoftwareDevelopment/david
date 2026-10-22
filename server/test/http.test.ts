@@ -24,7 +24,7 @@ test("the seeded demo hotel has everything the app needs", async () => {
   assert(dash.json.stats.inHouse >= 1);
   assert(dash.json.stats.memoriesTotal >= 6);
   const guests = await d.call("GET", "/api/guests");
-  assert.equal(guests.json.guests.length, 5);
+  assert.equal(guests.json.guests.length, 6);
   assert((await d.call("GET", "/api/services")).json.services.length >= 15);
   assert.equal((await d.call("GET", "/api/campaigns")).json.campaigns.length, 5);
 });
@@ -173,4 +173,19 @@ test("the cron endpoint needs its secret", async () => {
   assert.equal((await app.request("/cron/tick", { method: "POST" })).status, 401);
   assert.equal((await app.request("/cron/tick", { method: "POST", headers: { authorization: "Bearer wrong" } })).status, 401);
   assert.equal((await app.request("/cron/tick", { method: "POST", headers: { authorization: "Bearer s3cret" } })).status, 200);
+});
+
+test("today's arrivals show what the guest asked for and how to make the stay theirs", async () => {
+  const d = await demoApp();
+  const dash = (await d.call("GET", "/api/dashboard")).json;
+  const amara = dash.arrivals.find((a: any) => a.guest.firstName === "Amara");
+  assert(amara, "Amara arrives today");
+  assert.equal(amara.pastStays, 1);
+  assert.deepEqual(amara.asked.map((r: any) => r.kind).sort(), ["amenities", "room_service"]);
+  assert.equal(amara.stay.notes, "Celebrating her partner's birthday");
+  const touches = amara.touches.map((t: any) => t.text);
+  assert.match(touches[0], /Welcome back, Amara\. Your 2nd stay/);
+  assert(touches.includes("Feather-free pillows on the bed."));
+  assert(touches.includes("Handwritten note for their birthday."));
+  assert(touches.some((t: string) => /usual: oat flat white/.test(t)));
 });

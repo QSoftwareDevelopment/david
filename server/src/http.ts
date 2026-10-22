@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Principal } from "./auth.js";
 import { defaultCampaigns } from "./campaigns.js";
 import { recall } from "./memory.js";
+import { roomTouches } from "./touches.js";
 import type { David } from "./service.js";
 import { EMPTY_TWIML, normalizePhone, validTwilioSignature, type RecordingSms } from "./sms.js";
 import type { Store } from "./store.js";
@@ -149,7 +150,10 @@ export function createApp(deps: AppDeps) {
         for (const s of stays.filter((x) => x.arrival === today)) {
           const g = guests.get(s.guestId);
           if (!g) continue;
-          out.push({ stay: s, guest: g, pastStays: await store.pastStayCount(g.id, today), memories: recall(await store.memories(g.id), david.clock(), 3) });
+          const [pastStays, all, asked] = await Promise.all([store.pastStayCount(g.id, today), store.memories(g.id), store.openRequestsOf(g.id)]);
+          const memories = recall(all, david.clock(), 12);
+          // What they asked for ahead of time, and what we can do to make the stay theirs.
+          out.push({ stay: s, guest: g, pastStays, memories: memories.slice(0, 3), asked, touches: roomTouches({ memories, pastStays, stay: s, firstName: g.firstName, vip: g.vip }) });
         }
         return out;
       }),

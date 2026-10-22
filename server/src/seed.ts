@@ -65,6 +65,18 @@ export async function seedDemo(store: Store, now: Date = new Date()): Promise<Ho
   await learn(priya.id, "dietary", "allergy", "shellfish", "guest");
   await request(priya.id, ps.id, "housekeeping", "Housekeeping: extra towels", ["extra towels"], new Date(now.getTime() - 25 * 60_000), "new");
 
+  // Amara: back for a second stay, arriving today. She already asked for two things by text.
+  const amara = await guest("+14165550166", "Amara", "Okoye");
+  const a1 = await store.createStay({ hotelId: hotel.id, guestId: amara.id, arrival: addDays(today, -120), departure: addDays(today, -117), room: "715" });
+  const a2 = await store.createStay({ hotelId: hotel.id, guestId: amara.id, arrival: today, departure: addDays(today, 3), partySize: 2, notes: "Celebrating her partner's birthday" });
+  for (const d of [0, 1]) await request(amara.id, a1.id, "room_service", "Room service: oat flat white", ["oat flat white"], at(addDays(today, -120 + d), 8, 5));
+  await learn(amara.id, "preference", "pillows", "feather-free pillows", "guest");
+  await learn(amara.id, "occasion", "birthday", "here for a birthday", "guest");
+  await learn(amara.id, "preference", "temperature", "likes the room cool", "observed");
+  for (const f of (await import("./memory.js")).habitsFrom(await store.recentRequests(amara.id), hotel.timezone)) await store.learn(hotel.id, amara.id, f, at(addDays(today, -117), 9));
+  await request(amara.id, a2.id, "amenities", "Amenities: extra feather-free pillows", ["feather-free pillows"], new Date(now.getTime() - 20 * 3600_000), "new");
+  await request(amara.id, a2.id, "room_service", "Room service: bottle of champagne, on ice at arrival", ["bottle of champagne"], new Date(now.getTime() - 19 * 3600_000), "new");
+
   // Marcus: first stay, tomorrow.
   const marcus = await guest("+14165550133", "Marcus", "Lee");
   await store.createStay({ hotelId: hotel.id, guestId: marcus.id, arrival: addDays(today, 1), departure: addDays(today, 3), partySize: 2 });

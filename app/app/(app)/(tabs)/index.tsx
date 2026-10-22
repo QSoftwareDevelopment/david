@@ -57,7 +57,7 @@ export default function Today() {
 
           <SectionLabel>Arriving today</SectionLabel>
           {data.arrivals.length === 0 ? <Empty title="No arrivals today" body="Guests arriving later this week are under Guests." /> : null}
-          {data.arrivals.map(({ guest, stay, pastStays, memories }) => {
+          {data.arrivals.map(({ guest, stay, pastStays, asked, touches }) => {
             const name = fullName(guest);
             return (
               <Card key={stay.id} onPress={() => router.push(`/guest/${guest.id}`)}>
@@ -69,13 +69,26 @@ export default function Today() {
                   </View>
                   {pastStays > 0 ? <Badge label={`Stay ${pastStays + 1}`} tone="brass" /> : <Badge label="First stay" tone="info" />}
                 </Row>
-                {memories.length > 0 ? (
-                  <View style={{ marginTop: space.sm }}>
-                    {memories.map((m) => (
-                      <Text key={m.id} style={{ color: colors.text, fontSize: font.sm, marginTop: 2 }}>
-                        <Text style={{ color: colors.brassDeep, fontWeight: '700' }}>Remember: </Text>
-                        {m.key === 'allergy' ? `${m.value} allergy` : m.value}
-                      </Text>
+                {asked.length > 0 ? (
+                  <View style={{ marginTop: space.md }}>
+                    <Text style={{ color: colors.muted, fontSize: font.xs, fontWeight: '700', letterSpacing: 0.6 }}>ASKED FOR AHEAD OF TIME</Text>
+                    {asked.map((r) => (
+                      <Row key={r.id} style={{ marginTop: 4, alignItems: 'flex-start' }}>
+                        <Badge label={REQUEST_LABEL[r.kind] ?? r.kind} tone="info" />
+                        <Text style={{ color: colors.text, fontSize: font.sm, marginLeft: space.sm, flex: 1 }}>{r.summary.replace(/^[A-Za-z][A-Za-z -]*:\s*/, '')}</Text>
+                      </Row>
+                    ))}
+                  </View>
+                ) : null}
+                {stay.notes ? <Text style={{ marginTop: space.sm, color: colors.text, fontSize: font.sm }}><Text style={{ fontWeight: '700' }}>Booking note: </Text>{stay.notes}</Text> : null}
+                {touches.length > 0 ? (
+                  <View style={{ marginTop: space.md }}>
+                    <Text style={{ color: colors.brassDeep, fontSize: font.xs, fontWeight: '700', letterSpacing: 0.6 }}>MAKE IT MEMORABLE</Text>
+                    {touches.map((t) => (
+                      <View key={t.text} style={{ marginTop: 4 }}>
+                        <Text style={{ color: colors.text, fontSize: font.sm }}>{t.text}</Text>
+                        <Text style={{ color: colors.muted, fontSize: font.xs }}>{t.because}</Text>
+                      </View>
                     ))}
                   </View>
                 ) : null}

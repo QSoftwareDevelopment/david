@@ -29,7 +29,7 @@ export interface Service { id: string; category: string; name: string; descripti
 export interface Dashboard {
   today: string;
   stats: { arrivalsToday: number; inHouse: number; departuresToday: number; openRequests: number; urgentRequests: number; requestsToday: number; repeatGuestsInHouse: number; guestsTotal: number; memoriesTotal: number; optedOut: number };
-  arrivals: { stay: Stay; guest: Guest; pastStays: number; memories: Memory[] }[];
+  arrivals: { stay: Stay; guest: Guest; pastStays: number; memories: Memory[]; asked: GuestRequest[]; touches: { text: string; because: string }[] }[];
   urgent: RequestRow[];
 }
 export interface Me { hotel: Hotel; hotels: Hotel[]; demo: boolean; now: string }
