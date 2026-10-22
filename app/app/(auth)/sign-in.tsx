@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Text, View } from 'react-native';
 
 import { useAuth } from '@/auth/AuthProvider';
-import { colors, font, space } from '@/theme';
+import { colors, font, fonts, space } from '@/theme';
 import { Button, Card, Field, Screen } from '@/ui/kit';
 
 const ZONES = ['America/Toronto', 'America/New_York', 'America/Vancouver', 'Europe/London', 'Asia/Kolkata', 'Australia/Sydney'];
@@ -36,7 +36,7 @@ export default function AuthScreen() {
     <Screen dark>
       <View style={{ flex: 1, justifyContent: 'center', minHeight: 640 }}>
         <Text style={{ color: colors.brass, fontSize: font.xs, letterSpacing: 3, fontWeight: '700' }}>DAVID</Text>
-        <Text style={{ color: colors.inverse, fontSize: 34, fontWeight: '700', letterSpacing: -1, marginTop: space.sm }}>
+        <Text style={{ color: colors.inverse, fontFamily: fonts.accent, fontSize: 44, lineHeight: 46, letterSpacing: -1.4, marginTop: space.sm }}>
           The concierge{'\n'}who remembers.
         </Text>
         <Text style={{ color: colors.inverseMuted, marginTop: space.md, marginBottom: space.xl, fontSize: font.md }}>

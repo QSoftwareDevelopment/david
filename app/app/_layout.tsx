@@ -1,3 +1,4 @@
+import { BricolageGrotesque_600SemiBold, BricolageGrotesque_700Bold, BricolageGrotesque_800ExtraBold, useFonts } from '@expo-google-fonts/bricolage-grotesque';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
@@ -23,7 +24,7 @@ function Gate() {
   if (status === 'restoring') {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.ink }}>
-        <ActivityIndicator color={colors.brass} size="large" />
+        <ActivityIndicator color={colors.inverse} size="large" />
       </View>
     );
   }
@@ -36,6 +37,9 @@ function Gate() {
 }
 
 export default function RootLayout() {
+  // Headlines use Bricolage Grotesque, like Vic Connect. If it fails to load, the system font stands in.
+  const [loaded, failed] = useFonts({ BricolageGrotesque_600SemiBold, BricolageGrotesque_700Bold, BricolageGrotesque_800ExtraBold });
+  if (!loaded && !failed) return <View style={{ flex: 1, backgroundColor: colors.ink }} />;
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />

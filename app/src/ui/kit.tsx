@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { colors, font, radius, space } from '@/theme';
+import { colors, font, fonts, radius, shadow, space } from '@/theme';
 import { initials } from '@/format';
 
 export function Screen({ children, scroll = true, onRefresh, refreshing, pad = true, dark = false }: { children: ReactNode; scroll?: boolean; onRefresh?: () => void; refreshing?: boolean; pad?: boolean; dark?: boolean }) {
@@ -13,7 +13,7 @@ export function Screen({ children, scroll = true, onRefresh, refreshing, pad = t
     <ScrollView
       contentContainerStyle={[pad && s.pad, { paddingBottom: space.xxl * 2 }]}
       keyboardShouldPersistTaps="handled"
-      refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.brass} /> : undefined}
+      refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.ink} /> : undefined}
     >
       {children}
     </ScrollView>
@@ -51,7 +51,7 @@ export function SectionLabel({ children, right }: { children: ReactNode; right?:
 }
 
 export function Card({ children, style, onPress, tone }: { children: ReactNode; style?: StyleProp<ViewStyle>; onPress?: () => void; tone?: 'urgent' | 'brass' }) {
-  const box = [s.card, tone === 'urgent' && { borderColor: colors.danger }, tone === 'brass' && { backgroundColor: colors.brassSoft, borderColor: colors.brass }, style];
+  const box = [s.card, tone === 'urgent' && { borderColor: colors.danger, borderWidth: 1.5 }, tone === 'brass' && { backgroundColor: colors.inkSoft }, style];
   return onPress ? (
     <Pressable onPress={onPress} style={({ pressed }) => [box, pressed && { opacity: 0.85 }]} accessibilityRole="button">
       {children}
@@ -72,15 +72,15 @@ export function Button({ label, onPress, variant = 'primary', loading, disabled,
       style={({ pressed }) => [
         s.btn, small && s.btnSmall,
         variant === 'primary' && { backgroundColor: colors.ink },
-        variant === 'secondary' && { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.lineStrong },
+        variant === 'secondary' && { backgroundColor: colors.surfaceMuted },
         variant === 'ghost' && { backgroundColor: 'transparent' },
         variant === 'danger' && { backgroundColor: colors.dangerSoft },
-        pressed && !blocked && { opacity: 0.8 },
+        pressed && !blocked && (variant === 'primary' ? { backgroundColor: colors.crimsonPressed } : { opacity: 0.8 }),
         blocked && { opacity: 0.5 },
       ]}
     >
       {loading ? <ActivityIndicator color={variant === 'primary' ? colors.inverse : colors.ink} /> : (
-        <Text style={[s.btnText, variant === 'primary' && { color: colors.inverse }, variant === 'danger' && { color: colors.danger }, small && { fontSize: font.sm }]}>{label}</Text>
+        <Text style={[s.btnText, variant === 'primary' && { color: colors.inverse }, variant === 'secondary' && { color: colors.text }, variant === 'danger' && { color: colors.danger }, small && { fontSize: font.sm }]}>{label}</Text>
       )}
     </Pressable>
   );
@@ -105,7 +105,7 @@ export function Chip({ label, on, onPress }: { label: string; on?: boolean; onPr
 }
 
 export function Badge({ label, tone = 'neutral' }: { label: string; tone?: 'neutral' | 'ok' | 'warn' | 'danger' | 'brass' | 'info' }) {
-  const t = { neutral: [colors.line, colors.muted], ok: [colors.okSoft, colors.ok], warn: [colors.warnSoft, colors.warn], danger: [colors.dangerSoft, colors.danger], brass: [colors.brassSoft, colors.brassDeep], info: [colors.infoSoft, colors.info] }[tone];
+  const t = { neutral: [colors.surfaceMuted, colors.muted], ok: [colors.okSoft, colors.ok], warn: [colors.warnSoft, colors.warn], danger: [colors.dangerSoft, colors.danger], brass: [colors.brassSoft, colors.brassDeep], info: [colors.infoSoft, colors.info] }[tone];
   return (
     <View style={[s.badge, { backgroundColor: t[0] }]}>
       <Text style={[s.badgeText, { color: t[1] }]}>{label}</Text>
@@ -114,9 +114,11 @@ export function Badge({ label, tone = 'neutral' }: { label: string; tone?: 'neut
 }
 
 export function Avatar({ name, size = 40, vip }: { name: string; size?: number; vip?: boolean }) {
+  // A steady colour per person, so they're recognisable at a glance.
+  const tone = colors.avatars[[...name].reduce((n, ch) => n + ch.charCodeAt(0), 0) % colors.avatars.length]!;
   return (
-    <View style={[s.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: vip ? colors.brassSoft : colors.ink }]}>
-      <Text style={{ color: vip ? colors.brassDeep : colors.inverse, fontWeight: '700', fontSize: size * 0.38 }}>{initials(name)}</Text>
+    <View style={[s.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: vip ? colors.brass : tone }]}>
+      <Text style={{ color: vip ? '#1B1416' : colors.inverse, fontWeight: '700', fontSize: size * 0.38 }}>{initials(name)}</Text>
     </View>
   );
 }
@@ -124,7 +126,7 @@ export function Avatar({ name, size = 40, vip }: { name: string; size?: number; 
 export function Empty({ title, body }: { title: string; body?: string }) {
   return (
     <View style={s.empty}>
-      <Text style={{ fontSize: font.lg, fontWeight: '600', color: colors.text, textAlign: 'center' }}>{title}</Text>
+      <Text style={{ fontFamily: fonts.displayMedium, fontSize: 19, color: colors.text, textAlign: 'center' }}>{title}</Text>
       {body ? <Text style={{ color: colors.muted, marginTop: space.xs, textAlign: 'center' }}>{body}</Text> : null}
     </View>
   );
@@ -140,7 +142,7 @@ export function Problem({ message, onRetry }: { message: string; onRetry?: () =>
 }
 
 export function Loading() {
-  return <View style={{ padding: space.xl }}><ActivityIndicator color={colors.brass} /></View>;
+  return <View style={{ padding: space.xl }}><ActivityIndicator color={colors.ink} /></View>;
 }
 
 export function Row({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
@@ -150,18 +152,18 @@ export function Row({ children, style }: { children: ReactNode; style?: StylePro
 const s = StyleSheet.create({
   pad: { padding: space.lg },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: space.lg, marginTop: space.sm },
-  title: { fontSize: font.xxl, fontWeight: '700', color: colors.ink, letterSpacing: -0.5 },
+  title: { fontFamily: fonts.display, fontSize: 34, lineHeight: 38, color: colors.text, letterSpacing: -1 },
   sub: { color: colors.muted, marginTop: 2, fontSize: font.md },
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.xl, marginBottom: space.sm },
-  section: { fontSize: font.xs, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', color: colors.muted },
-  card: { backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, padding: space.lg, marginBottom: space.md },
-  btn: { minHeight: 46, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.lg },
+  section: { fontSize: font.xs, fontWeight: '700', letterSpacing: 0.9, textTransform: 'uppercase', color: colors.muted },
+  card: { backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: space.lg, marginBottom: space.md, boxShadow: shadow.card },
+  btn: { minHeight: 46, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.lg },
   btnSmall: { minHeight: 36, paddingHorizontal: space.md },
   btnText: { fontSize: font.md, fontWeight: '600', color: colors.ink },
   label: { fontSize: font.sm, fontWeight: '600', color: colors.text, marginBottom: 6 },
-  input: { borderWidth: 1, borderColor: colors.lineStrong, borderRadius: radius.md, backgroundColor: colors.card, paddingHorizontal: space.md, paddingVertical: 12, fontSize: font.md, color: colors.text },
+  input: { borderWidth: 1, borderColor: 'transparent', borderRadius: radius.md, backgroundColor: colors.surfaceMuted, paddingHorizontal: space.md, paddingVertical: 12, fontSize: font.md, color: colors.text },
   error: { color: colors.danger, marginTop: 4, fontSize: font.sm },
-  chip: { borderWidth: 1, borderColor: colors.lineStrong, borderRadius: radius.pill, paddingHorizontal: space.md, paddingVertical: 7, marginRight: space.sm, marginBottom: space.sm, backgroundColor: colors.card },
+  chip: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.pill, paddingHorizontal: space.md + 2, paddingVertical: 9, marginRight: space.sm, marginBottom: space.sm, backgroundColor: colors.card },
   chipText: { fontSize: font.sm, fontWeight: '600', color: colors.text },
   badge: { alignSelf: 'flex-start', borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 3 },
   badgeText: { fontSize: font.xs, fontWeight: '700' },

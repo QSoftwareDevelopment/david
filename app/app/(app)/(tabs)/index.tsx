@@ -6,14 +6,14 @@ import type { Dashboard } from '@/api/types';
 import { useFetch } from '@/api/useFetch';
 import { useAuth } from '@/auth/AuthProvider';
 import { fullName, dateShort, nights, DEPARTMENT_LABEL, REQUEST_LABEL, timeAgo } from '@/format';
-import { colors, font, space } from '@/theme';
+import { colors, font, fonts, space } from '@/theme';
 import { ViewSwitcher } from '@/ui/ViewSwitcher';
 import { Avatar, Badge, Card, Empty, Loading, Problem, Row, Screen, SectionLabel, Title } from '@/ui/kit';
 
 function Stat({ value, label, tone }: { value: number; label: string; tone?: 'urgent' }) {
   return (
-    <View style={{ width: '47.5%', flexGrow: 1, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: tone === 'urgent' && value > 0 ? colors.danger : colors.line, padding: space.md, margin: 4 }}>
-      <Text style={{ fontSize: 28, fontWeight: '700', color: tone === 'urgent' && value > 0 ? colors.danger : colors.ink }}>{value}</Text>
+    <View style={{ width: '47.5%', flexGrow: 1, backgroundColor: colors.card, borderRadius: 20, borderWidth: 1, borderColor: tone === 'urgent' && value > 0 ? colors.danger : colors.line, padding: space.md, margin: 4 }}>
+      <Text style={{ fontFamily: fonts.display, fontSize: 30, color: tone === 'urgent' && value > 0 ? colors.danger : colors.text }}>{value}</Text>
       <Text style={{ color: colors.muted, fontSize: font.sm }}>{label}</Text>
     </View>
   );

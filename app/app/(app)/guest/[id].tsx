@@ -8,7 +8,7 @@ import { useFetch } from '@/api/useFetch';
 import { addDays, isDate, localDate } from '@/dates';
 import { useAuth } from '@/auth/AuthProvider';
 import { dateShort, fullName, MEMORY_LABEL, nights, prettyPhone, REQUEST_LABEL, timeAgo } from '@/format';
-import { colors, font, radius, space } from '@/theme';
+import { colors, font, fonts, radius, space } from '@/theme';
 import { Avatar, Badge, Button, Card, Chip, Empty, Field, Loading, Problem, Row, Screen, SectionLabel } from '@/ui/kit';
 
 type Profile = { guest: Guest; stays: Stay[]; memories: Memory[]; requests: GuestRequest[]; thread: Message[] };
@@ -114,7 +114,7 @@ export default function GuestScreen() {
       <Row style={{ marginBottom: space.md }}>
         <Avatar name={name} size={56} vip={guest.vip} />
         <View style={{ marginLeft: space.md, flex: 1 }}>
-          <Text style={{ fontSize: font.xl, fontWeight: '700', color: colors.ink }}>{name}</Text>
+          <Text style={{ fontFamily: fonts.display, fontSize: 28, color: colors.text, letterSpacing: -0.7 }}>{name}</Text>
           <Text style={{ color: colors.muted }}>{prettyPhone(guest.phone)}</Text>
           <Row style={{ marginTop: 6, flexWrap: 'wrap' }}>
             {guest.vip ? <Badge label="VIP" tone="brass" /> : null}
