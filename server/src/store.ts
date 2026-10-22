@@ -1,6 +1,7 @@
 import type { Db } from "./db.js";
 import type { Fact } from "./memory.js";
 import { merge } from "./memory.js";
+import type { SquareCredentials, SquareMenuItem } from "./square.js";
 import type {
   Campaign, CampaignAudience, CampaignKind, Consent, Guest, GuestRequest, Hotel, Memory, Message, MessageAuthor,
   RequestKind, RequestStatus, Service, ServiceCategory, Stay, StayStatus,
@@ -13,6 +14,7 @@ const day = (v: unknown): string => (v instanceof Date ? v.toISOString().slice(0
 const hotelOf = (r: Row): Hotel => ({
   id: r.id, name: r.name, slug: r.slug, timezone: r.timezone, smsNumber: r.sms_number, tone: r.tone, signature: r.signature,
   quietStart: r.quiet_start, quietEnd: r.quiet_end, checkinTime: r.checkin_time, checkoutTime: r.checkout_time,
+  square: { connected: !!(r.square_access_token && r.square_location_id), locationId: r.square_location_id ?? null, environment: r.square_environment ?? "production", syncedAt: r.square_synced_at ? iso(r.square_synced_at) : null },
 });
 const guestOf = (r: Row): Guest => ({
   id: r.id, hotelId: r.hotel_id, phone: r.phone, firstName: r.first_name, lastName: r.last_name, language: r.language,
@@ -30,6 +32,7 @@ const requestOf = (r: Row): GuestRequest => ({
   id: r.id, hotelId: r.hotel_id, guestId: r.guest_id, stayId: r.stay_id, kind: r.kind, summary: r.summary,
   details: (r.details ?? {}) as Record<string, unknown>, status: r.status, priority: r.priority, createdBy: r.created_by,
   createdAt: iso(r.created_at), updatedAt: iso(r.updated_at), completedAt: r.completed_at ? iso(r.completed_at) : null,
+  squareOrderId: r.square_order_id ?? null, squareError: r.square_error ?? null,
 });
 const messageOf = (r: Row): Message => ({
   id: r.id, hotelId: r.hotel_id, guestId: r.guest_id, direction: r.direction, author: r.author, body: r.body, status: r.status,
@@ -42,6 +45,7 @@ const campaignOf = (r: Row): Campaign => ({
 const serviceOf = (r: Row): Service => ({
   id: r.id, hotelId: r.hotel_id, category: r.category, name: r.name, description: r.description,
   priceCents: r.price_cents, availableFrom: r.available_from, availableUntil: r.available_until, active: r.active,
+  squareVariationId: r.square_variation_id ?? null,
 });
 
 export class Store {
@@ -328,19 +332,79 @@ export class Store {
     const { rows } = await this.db.query(`select * from services where hotel_id = $1 ${onlyActive ? "and active" : ""} order by category, sort, name`, [hotelId]);
     return rows.map(serviceOf);
   }
-  async createService(s: Omit<Service, "id">): Promise<Service> {
+  async createService(s: Omit<Service, "id" | "squareVariationId">): Promise<Service> {
     const { rows } = await this.db.query(
       "insert into services (hotel_id, category, name, description, price_cents, available_from, available_until, active) values ($1,$2,$3,$4,$5,$6,$7,$8) returning *",
       [s.hotelId, s.category, s.name, s.description, s.priceCents, s.availableFrom, s.availableUntil, s.active]);
     return serviceOf(rows[0]!);
   }
-  async updateService(id: string, p: Partial<Omit<Service, "id" | "hotelId">>): Promise<Service | null> {
+  async updateService(id: string, p: Partial<Omit<Service, "id" | "hotelId" | "squareVariationId">>): Promise<Service | null> {
     const { rows } = await this.db.query(
       `update services set category = coalesce($2, category), name = coalesce($3, name), description = coalesce($4, description),
          price_cents = case when $5::boolean then $6 else price_cents end, active = coalesce($7, active) where id = $1 returning *`,
       [id, p.category ?? null, p.name ?? null, p.description ?? null, p.priceCents !== undefined, p.priceCents ?? null, p.active ?? null]);
     return rows[0] ? serviceOf(rows[0]) : null;
   }
+  async stay(id: string): Promise<Stay | null> {
+    const { rows } = await this.db.query("select * from stays where id = $1", [id]);
+    return rows[0] ? stayOf(rows[0]) : null;
+  }
+
+  // ── Square ───────────────────────────────────────────────
+  async squareCredentials(hotelId: string): Promise<SquareCredentials | null> {
+    const { rows } = await this.db.query("select square_access_token, square_location_id, square_environment from hotels where id = $1", [hotelId]);
+    const r = rows[0];
+    return r?.square_access_token && r.square_location_id ? { accessToken: String(r.square_access_token), locationId: String(r.square_location_id), environment: r.square_environment === "sandbox" ? "sandbox" : "production" } : null;
+  }
+  /** Save credentials. A blank token keeps the one already stored. */
+  async setSquare(hotelId: string, p: { accessToken?: string; locationId: string; environment: "production" | "sandbox" }): Promise<void> {
+    await this.db.query(
+      "update hotels set square_access_token = coalesce($2, square_access_token), square_location_id = $3, square_environment = $4 where id = $1",
+      [hotelId, p.accessToken || null, p.locationId, p.environment]);
+  }
+  async clearSquare(hotelId: string): Promise<void> {
+    await this.db.query("update hotels set square_access_token = null, square_location_id = null, square_synced_at = null where id = $1", [hotelId]);
+    await this.db.query("update services set square_item_id = null, square_variation_id = null where hotel_id = $1", [hotelId]);
+  }
+  /** Make room service match Square: add, update and hide. Items added by hand are left alone. */
+  async syncSquareMenu(hotelId: string, items: SquareMenuItem[], at: Date): Promise<{ added: number; updated: number; hidden: number }> {
+    const all = await this.services(hotelId);
+    const existing = new Map(all.filter((s) => s.squareVariationId).map((s) => [s.squareVariationId!, s]));
+    // A hand-made item with the same name is the same dish: link it instead of listing it twice.
+    const byName = new Map(all.filter((s) => !s.squareVariationId && s.category === "room_service").map((s) => [s.name.trim().toLowerCase(), s]));
+    const seen = new Set<string>();
+    let added = 0, updated = 0, hidden = 0;
+    for (const it of items) {
+      if (seen.has(it.variationId)) continue;
+      seen.add(it.variationId);
+      const adopt = byName.get(it.name.trim().toLowerCase());
+      const have = existing.get(it.variationId) ?? adopt;
+      if (have) {
+        if (adopt && have === adopt) byName.delete(it.name.trim().toLowerCase());
+        // Square owns the name, note and price. Whether the item is switched on is the hotel's call.
+        await this.db.query("update services set name = $2, description = coalesce(nullif($3, ''), description), price_cents = $4, square_item_id = $5, square_variation_id = $6 where id = $1", [have.id, it.name, it.description, it.priceCents, it.itemId, it.variationId]);
+        updated++;
+      } else {
+        await this.db.query(
+          "insert into services (hotel_id, category, name, description, price_cents, active, square_item_id, square_variation_id) values ($1,'room_service',$2,$3,$4,true,$5,$6)",
+          [hotelId, it.name, it.description, it.priceCents, it.itemId, it.variationId]);
+        added++;
+      }
+    }
+    for (const [vid, s] of existing) {
+      if (!seen.has(vid) && s.active) {
+        await this.db.query("update services set active = false where id = $1", [s.id]);
+        hidden++;
+      }
+    }
+    await this.db.query("update hotels set square_synced_at = $2::timestamptz where id = $1", [hotelId, at.toISOString()]);
+    return { added, updated, hidden };
+  }
+  async setRequestSquare(id: string, p: { orderId: string | null; error: string | null }): Promise<GuestRequest | null> {
+    const { rows } = await this.db.query("update requests set square_order_id = coalesce($2, square_order_id), square_error = $3 where id = $1 returning *", [id, p.orderId, p.error]);
+    return rows[0] ? requestOf(rows[0]) : null;
+  }
+
   async deleteService(id: string): Promise<void> {
     await this.db.query("delete from services where id = $1", [id]);
   }

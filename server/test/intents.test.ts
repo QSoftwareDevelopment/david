@@ -66,3 +66,12 @@ test("nothing is invented from a message that asks for nothing", () => {
   const u = understand("what time is it", catalog);
   assert.deepEqual([u.requests.length, u.facts.length, u.escalate, u.smallTalk], [0, 0, false, false]);
 });
+
+test("a dish that is only on the hotel's menu is still understood as room service", () => {
+  const menu = [{ ...catalog[0]!, id: "x", category: "room_service" as const, name: "Truffle linguine", active: true }];
+  const u = understand("Could I get the truffle linguine to my room?", menu);
+  assert.equal(u.requests.length, 1);
+  assert.equal(u.requests[0]!.kind, "room_service");
+  assert.deepEqual(u.requests[0]!.items, ["Truffle linguine"]);
+  assert.equal(understand("I love linguine", menu).requests.length, 0, "only the exact menu name counts");
+});

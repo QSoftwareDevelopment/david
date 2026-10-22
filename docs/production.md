@@ -56,7 +56,20 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=...
 Build with EAS (`eas build`) for iOS/Android, or `npx expo export --platform web` for a web build. A new account signs up, then
 creates its hotel; David seeds the five default campaigns. Adding staff to an existing hotel is a row in the `staff` table for now.
 
-## 5. Before the first real guest
+## 5. Square (optional)
+
+Run `supabase/migrations/0002_square.sql` after `0001`. In the Square Developer Dashboard create an application, copy its
+access token (it needs permission to read items and write orders) and note the location ID. In the staff app go to
+More → Square, paste both, and choose Live or Sandbox. David checks the credentials, imports the catalog into
+Room service, and from then on sends each room service order to that location as an open order.
+
+- Square owns each imported item's name, note and price; the hotel keeps control of whether it is on or off.
+- A hand-made item with the same name as a Square item is linked to it, not duplicated.
+- Orders carry a ticket name like "Rm 412 · Priya" and any allergy as a note on every line. Retrying never duplicates an order.
+- **Not verified against a real Square account yet.** Test with Sandbox first. Orders are created as open orders; they do not
+  take payment, and whether they appear on a kitchen display depends on how the location is set up in Square.
+
+## 6. Before the first real guest
 
 - Add guests with **Guest agreed to receive texts** ticked only when they genuinely agreed at booking.
 - Fill in **Menu & services**: it is the only thing David will offer.

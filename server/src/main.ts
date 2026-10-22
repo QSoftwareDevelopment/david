@@ -6,6 +6,7 @@ import { createApp } from "./http.js";
 import { seedDemo } from "./seed.js";
 import { David } from "./service.js";
 import { RecordingSms, TwilioSms } from "./sms.js";
+import { HttpSquare, RecordingSquare } from "./square.js";
 import { Store } from "./store.js";
 
 const env = process.env;
@@ -23,7 +24,9 @@ const recorder = demo || !env.TWILIO_ACCOUNT_SID ? new RecordingSms() : undefine
 const sms = recorder ?? new TwilioSms(env.TWILIO_ACCOUNT_SID!, env.TWILIO_AUTH_TOKEN!);
 if (!demo && !env.TWILIO_ACCOUNT_SID) console.warn("No TWILIO_ACCOUNT_SID: texts will be recorded, not sent.");
 
-const david = new David(store, sms, chooseAgent(env), now);
+// The demo has no real Square: it hands out a small menu and keeps the orders it is sent.
+const demoSquare = demo ? new RecordingSquare() : undefined;
+const david = new David(store, sms, chooseAgent(env), now, demoSquare ? () => demoSquare : (c) => new HttpSquare(c));
 if (demo) {
   const hotel = await seedDemo(store, now());
   console.log(`demo hotel ready: ${hotel.name}`);

@@ -183,6 +183,44 @@ export function createApp(deps: AppDeps) {
     return c.json({ request: await store.createRequest({ hotelId: hotel.id, guestId: guest.id, stayId: stay?.id ?? null, kind: b.kind, summary: b.summary, priority: b.priority, createdBy: "staff", at: david.clock() }) }, 201);
   });
 
+  // Square
+  const squareView = (h: Hotel) => h.square ?? { connected: false, locationId: null, environment: "production" as const, syncedAt: null };
+  const syncSquare = async (hotel: Hotel) => {
+    const creds = await store.squareCredentials(hotel.id);
+    if (!creds) throw new Error("No such Square connection.");
+    const result = await store.syncSquareMenu(hotel.id, await david.square(creds).menu(), david.clock());
+    return { ...result, square: squareView((await store.hotel(hotel.id))!) };
+  };
+  app.get("/api/square", async (c) => c.json({ square: squareView(c.get("hotel")) }));
+  app.put("/api/square", async (c) => {
+    const b = z.object({
+      accessToken: z.string().trim().max(500).optional(), locationId: z.string().trim().min(1, "Enter the Square location ID.").max(100),
+      environment: z.enum(["production", "sandbox"]).default("production"),
+    }).parse(await c.req.json());
+    const hotel = c.get("hotel");
+    const stored = await store.squareCredentials(hotel.id);
+    const accessToken = b.accessToken || stored?.accessToken;
+    if (!accessToken) return c.json({ error: "Paste your Square access token." }, 400);
+    // Prove the credentials work before keeping them.
+    try { await david.square({ accessToken, locationId: b.locationId, environment: b.environment }).menu(); }
+    catch (e) { return c.json({ error: `Square said no: ${e instanceof Error ? e.message.replace(/^Square \d+: /, "") : "could not connect"}` }, 400); }
+    await store.setSquare(hotel.id, { accessToken: b.accessToken, locationId: b.locationId, environment: b.environment });
+    return c.json(await syncSquare(hotel));
+  });
+  app.post("/api/square/sync", async (c) => {
+    const hotel = c.get("hotel");
+    if (!(await store.squareCredentials(hotel.id))) return c.json({ error: "Connect Square first." }, 400);
+    try { return c.json(await syncSquare(hotel)); }
+    catch (e) { return c.json({ error: `Square said no: ${e instanceof Error ? e.message.replace(/^Square \d+: /, "") : "could not sync"}` }, 502); }
+  });
+  app.delete("/api/square", async (c) => { await store.clearSquare(c.get("hotel").id); return c.json({ square: squareView((await store.hotel(c.get("hotel").id))!) }); });
+  app.post("/api/requests/:id/square", async (c) => {
+    const hotel = c.get("hotel");
+    const existing = await store.request(c.req.param("id"));
+    if (!existing || existing.hotelId !== hotel.id) return c.json({ error: "No such request." }, 404);
+    return c.json({ request: await david.sendToSquare(hotel, existing) });
+  });
+
   // Guests
   app.get("/api/guests", async (c) => c.json({ guests: await store.listGuests(c.get("hotel").id, { q: c.req.query("q") }) }));
   app.post("/api/guests", async (c) => {

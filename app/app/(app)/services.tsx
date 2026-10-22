@@ -62,6 +62,7 @@ export default function Services() {
                 <Row style={{ justifyContent: 'space-between' }}>
                   <View style={{ flex: 1, paddingRight: space.md }}>
                     <Text style={{ fontWeight: '700', color: colors.text, fontSize: font.md }}>{s.name}{s.priceCents != null ? `  ${money(s.priceCents)}` : ''}</Text>
+                    {s.squareVariationId ? <Text style={{ color: colors.muted, fontSize: font.xs, marginTop: 2 }}>From Square. Name and price update when you sync.</Text> : null}
                     {s.description ? <Text style={{ color: colors.muted, marginTop: 2 }}>{s.description}</Text> : null}
                     {s.availableFrom ? <Text style={{ color: colors.muted, fontSize: font.xs, marginTop: 2 }}>{s.availableFrom}–{s.availableUntil ?? 'late'}</Text> : null}
                   </View>

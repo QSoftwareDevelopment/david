@@ -3,6 +3,7 @@ import type { Agent, AgentContext } from "./agent.js";
 import { habitsFrom, recall } from "./memory.js";
 import type { ProposedRequest } from "./intents.js";
 import { commandOf, helpReply, isRestart, normalizePhone, startReply, stopReply, trimForSms, type SmsProvider } from "./sms.js";
+import { HttpSquare, type SquareFactory } from "./square.js";
 import type { Store } from "./store.js";
 import { addDays, localParts } from "./time.js";
 import type { Guest, GuestRequest, Hotel, RequestStatus } from "./types.js";
@@ -31,7 +32,50 @@ export class David {
     readonly sms: SmsProvider,
     readonly agent: Agent,
     readonly clock: () => Date = () => new Date(),
+    /** How to reach a hotel's Square. Tests and the demo pass a recording one. */
+    readonly square: SquareFactory = (c) => new HttpSquare(c),
   ) {}
+
+  /**
+   * Send a room service request to the hotel's Square as an open order.
+   *
+   * Never throws and never holds up the guest's reply: the request already
+   * exists for staff, so a Square outage only leaves a note on it. Safe to call
+   * again; Square dedupes on the request id.
+   */
+  async sendToSquare(hotel: Hotel, request: GuestRequest): Promise<GuestRequest> {
+    if (request.kind !== "room_service") return request;
+    try {
+      const creds = await this.store.squareCredentials(hotel.id);
+      if (!creds) return request;
+      const items = Array.isArray(request.details.items) ? (request.details.items as unknown[]).filter((i): i is string => typeof i === "string") : [];
+      const menu = new Map((await this.store.services(hotel.id)).filter((s) => s.squareVariationId).map((s) => [s.name.toLowerCase(), s.squareVariationId!]));
+      const counts = new Map<string, number>();
+      const missing: string[] = [];
+      for (const item of items) {
+        const id = menu.get(item.trim().toLowerCase());
+        if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+        else missing.push(item);
+      }
+      if (counts.size === 0) {
+        return (await this.store.setRequestSquare(request.id, { orderId: null, error: "Not sent to Square: nothing in this order matches a Square item." })) ?? request;
+      }
+      const [guest, stay] = await Promise.all([this.store.guest(request.guestId), request.stayId ? this.store.stay(request.stayId) : null]);
+      // What the kitchen must not miss rides on every line: "[allergy: shellfish]".
+      const note = request.summary.match(/\[([^\]]+)\]\s*$/)?.[1];
+      const ticketName = [stay?.room ? `Rm ${stay.room}` : null, guest?.firstName ?? guest?.phone].filter(Boolean).join(" · ") || "Room service";
+      const { orderId } = await this.square(creds).createOrder({
+        key: `david-${request.id}`, ticketName,
+        lines: [...counts].map(([variationId, quantity]) => ({ variationId, quantity, note })),
+      });
+      const tail = missing.length ? `Not on Square, tell the kitchen: ${missing.join(", ")}.` : null;
+      return (await this.store.setRequestSquare(request.id, { orderId, error: tail })) ?? request;
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      console.error("[square] order failed:", text);
+      return (await this.store.setRequestSquare(request.id, { orderId: null, error: `Not sent to Square: ${text}`.slice(0, 300) })) ?? request;
+    }
+  }
 
   private from(hotel: Hotel): string {
     return hotel.smsNumber ?? "+10000000000";
@@ -109,11 +153,12 @@ export class David {
     for (const r of result.requests) {
       const dup = open.find((o) => o.kind === r.kind && now.getTime() - new Date(o.createdAt).getTime() < 15 * 60_000);
       if (dup) continue;
-      created.push(await this.store.createRequest({
+      const made = await this.store.createRequest({
         hotelId: hotel.id, guestId: guest.id, stayId: stay?.id ?? null, kind: r.kind, summary: r.summary,
         details: { items: r.items, when: r.when, original: body },
         priority: r.urgent ? "urgent" : "normal", at: now,
-      }));
+      });
+      created.push(await this.sendToSquare(hotel, made));
     }
     if (result.escalate) {
       const already = open.find((o) => o.kind === "other" && o.priority === "urgent");

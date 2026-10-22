@@ -28,6 +28,7 @@ export default function More() {
       <Title sub={hotel?.name}>More</Title>
       <Item title="Campaigns" body="The texts David sends first: before arrival, during, after and win-backs." onPress={() => router.push('/campaigns')} />
       <Item title="Menu & services" body="What David can offer: room service, housekeeping, laundry and more." onPress={() => router.push('/services')} />
+      <Item title="Square" body={hotel?.square?.connected ? 'Connected. Room service orders go to your Square.' : 'Pull the room service menu from Square and send orders to your kitchen.'} onPress={() => router.push('/square')} />
       <Item title="Hotel settings" body="David's voice, quiet hours, check-in times and the hotel's number." onPress={() => router.push('/settings')} />
       {demo ? <Item title="Guest phone (demo)" body="Text David as a guest and watch the app react." onPress={() => router.push('/simulator')} /> : null}
 

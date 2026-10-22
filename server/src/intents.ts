@@ -142,6 +142,18 @@ export function understand(text: string, catalog: Service[]): Understanding {
     });
   }
 
+  // The hotel's own menu is the best vocabulary there is. Names pulled in from
+  // Square ("Truffle linguine") match no keyword, so a name on the menu is a request.
+  const KIND_OF = { room_service: "room_service", housekeeping: "housekeeping", laundry: "laundry", amenity: "amenities", transport: "transport" } as const;
+  for (const [category, kind] of Object.entries(KIND_OF) as [keyof typeof KIND_OF, RequestKind][]) {
+    if (seen.has(kind)) continue;
+    const named = catalog.some((s) => s.active && s.category === category && new RegExp(`\\b${s.name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(clean));
+    if (!named) continue;
+    seen.add(kind);
+    const items = itemsIn(clean, kind, catalog);
+    requests.push({ kind, summary: summaryFor(kind, items, when, clean), items, urgent: false, when });
+  }
+
   const facts = factsIn(clean);
   const escalate = COMPLAINT.test(clean);
   const smallTalk = requests.length === 0 && facts.length === 0 && !escalate && THANKS.test(clean);

@@ -12,6 +12,8 @@ export interface Hotel {
   quietEnd: number;
   checkinTime: string;
   checkoutTime: string;
+  /** Never includes the access token. */
+  square?: { connected: boolean; locationId: string | null; environment: "production" | "sandbox"; syncedAt: string | null };
 }
 
 export interface Guest {
@@ -88,6 +90,8 @@ export interface GuestRequest {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  squareOrderId?: string | null;
+  squareError?: string | null;
 }
 
 export type MessageAuthor = "guest" | "david" | "staff" | "campaign";
@@ -139,4 +143,5 @@ export interface Service {
   availableFrom: string | null;
   availableUntil: string | null;
   active: boolean;
+  squareVariationId?: string | null;
 }

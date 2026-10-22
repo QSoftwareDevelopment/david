@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
-import { patch } from '@/api/client';
+import { patch, post } from '@/api/client';
 import type { RequestRow } from '@/api/types';
 import { useFetch } from '@/api/useFetch';
 import { REQUEST_LABEL, timeAgo } from '@/format';
@@ -38,6 +38,19 @@ export default function Requests() {
     }
   }
 
+  async function resend(r: RequestRow) {
+    setBusy(r.id);
+    try {
+      const res = await post<{ request: RequestRow }>(`/api/requests/${r.id}/square`);
+      setNotice(res.request.squareOrderId ? 'Sent to Square.' : (res.request.squareError ?? 'Could not send to Square.'));
+      await reload();
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : 'Could not send to Square.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <Screen onRefresh={reload} refreshing={loading && !!data}>
       <Title sub={data ? `${data.requests.length} shown` : undefined}>Requests</Title>
@@ -65,6 +78,13 @@ export default function Requests() {
             </View>
           </Row>
           <Text style={{ marginTop: space.sm, color: colors.text, fontSize: font.md }}>{r.summary}</Text>
+          {r.squareOrderId ? <View style={{ marginTop: space.sm, alignSelf: 'flex-start' }}><Badge label="Sent to Square" tone="ok" /></View> : null}
+          {r.squareError ? (
+            <Row style={{ marginTop: space.sm, flexWrap: 'wrap' }}>
+              <Text style={{ color: colors.danger, fontSize: font.sm, flexShrink: 1, marginRight: space.sm }}>{r.squareError}</Text>
+              {r.kind === 'room_service' && !r.squareOrderId && (r.status === 'new' || r.status === 'in_progress') ? <Button small label="Try again" variant="secondary" loading={busy === r.id} onPress={() => resend(r)} /> : null}
+            </Row>
+          ) : null}
           {r.status === 'new' || r.status === 'in_progress' ? (
             <Row style={{ marginTop: space.md }}>
               {r.status === 'new' ? <Button small label="Start" variant="secondary" loading={busy === r.id} onPress={() => move(r, 'in_progress')} /> : <Badge label="In progress" tone="warn" />}
