@@ -1,0 +1,88 @@
+import { defaultCampaigns } from "./campaigns.js";
+import type { Store } from "./store.js";
+import { addDays, localParts, zonedInstant } from "./time.js";
+import type { Hotel } from "./types.js";
+
+/**
+ * A believable hotel to demo David with: a menu, the default campaigns, and
+ * guests at every point in a stay, some of them regulars David already
+ * knows. Dates are relative to `now`, so the demo is always current.
+ */
+export async function seedDemo(store: Store, now: Date = new Date()): Promise<Hotel> {
+  const existing = await store.hotelBySlug("harbour-house");
+  if (existing) return existing;
+
+  const hotel = await store.createHotel({
+    name: "The Harbour House", slug: "harbour-house", timezone: "America/Toronto", smsNumber: "+14165550100",
+    tone: "warm, polished and brief, like a great concierge", signature: "- David",
+  });
+  const today = localParts(now, hotel.timezone).date;
+
+  const svc = (category: any, name: string, description = "", priceCents: number | null = null, from: string | null = null, until: string | null = null) =>
+    store.createService({ hotelId: hotel.id, category, name, description, priceCents, availableFrom: from, availableUntil: until, active: true });
+  await Promise.all([
+    svc("room_service", "Oat flat white", "Our barista blend", 550, "06:00", "22:00"),
+    svc("room_service", "Eggs Benedict", "", 2200, "06:30", "11:00"),
+    svc("room_service", "Club sandwich", "", 2400, "11:00", "23:00"),
+    svc("room_service", "Harbour burger", "", 2600, "11:00", "23:00"),
+    svc("room_service", "Caesar salad", "", 1900, "11:00", "23:00"),
+    svc("room_service", "Bottle of champagne", "", 12000, "12:00", "23:00"),
+    svc("housekeeping", "Extra towels"), svc("housekeeping", "Extra pillows"), svc("housekeeping", "Turn-down service"), svc("housekeeping", "Room refresh"),
+    svc("laundry", "Same-day laundry", "Picked up by 10am, back by 6pm", 2800), svc("laundry", "Dry cleaning", "Back next day", 1800), svc("laundry", "Shirt pressing", "", 800),
+    svc("amenity", "Crib"), svc("amenity", "Phone charger"), svc("amenity", "Feather-free bedding"),
+    svc("transport", "Airport car service", "Ask at the desk for rates"),
+  ]);
+  for (const c of defaultCampaigns(hotel.id)) await store.createCampaign(c);
+
+  const at = (date: string, hour: number, minute = 0) => new Date(zonedInstant(date, hour, hotel.timezone).getTime() + minute * 60_000);
+  const guest = (phone: string, firstName: string, lastName: string, extra: { vip?: boolean } = {}) =>
+    store.createGuest({ hotelId: hotel.id, phone, firstName, lastName, consent: "opted_in", consentSource: "booking_form", vip: extra.vip });
+  const request = async (g: string, stayId: string | null, kind: any, summary: string, items: string[], when: Date, status: "done" | "new" | "in_progress" = "done") => {
+    const r = await store.createRequest({ hotelId: hotel.id, guestId: g, stayId, kind, summary, details: { items } });
+    await store.db.query("update requests set created_at = $2::timestamptz, updated_at = $2::timestamptz, status = $3::text, completed_at = case when $3::text = 'done' then $2::timestamptz else null end where id = $1", [r.id, when.toISOString(), status]);
+    return r;
+  };
+  const learn = (g: string, kind: any, key: string, value: string, source: any = "guest", times = 1) => (async () => {
+    for (let i = 0; i < times; i++) await store.learn(hotel.id, g, { kind, key, value, source }, at(addDays(today, -40 - i * 30), 9));
+  })();
+
+  // Sam: a regular. Two past stays, firm habits, arriving in three days.
+  const sam = await guest("+14165550111", "Sam", "Rivera", { vip: true });
+  const s1 = await store.createStay({ hotelId: hotel.id, guestId: sam.id, arrival: addDays(today, -200), departure: addDays(today, -197), room: "804" });
+  const s2 = await store.createStay({ hotelId: hotel.id, guestId: sam.id, arrival: addDays(today, -90), departure: addDays(today, -87), room: "804" });
+  await store.createStay({ hotelId: hotel.id, guestId: sam.id, arrival: addDays(today, 3), departure: addDays(today, 6), partySize: 2 });
+  for (const [stay, base] of [[s1, -199], [s2, -89]] as const) {
+    for (const d of [0, 1, 2]) await request(sam.id, stay.id, "room_service", "Room service: oat flat white", ["oat flat white"], at(addDays(today, base + d), 7, 10));
+  }
+  await request(sam.id, s2.id, "laundry", "Laundry: shirts", ["shirts"], at(addDays(today, -88), 9));
+  await learn(sam.id, "preference", "pillows", "firm pillows", "guest", 2);
+  await learn(sam.id, "preference", "room", "a quiet high floor", "guest");
+  for (const f of (await import("./memory.js")).habitsFrom(await store.recentRequests(sam.id), hotel.timezone)) await store.learn(hotel.id, sam.id, f, at(addDays(today, -87), 9));
+
+  // Priya: in the house now, with an allergy and something open.
+  const priya = await guest("+14165550122", "Priya", "Nair");
+  const ps = await store.createStay({ hotelId: hotel.id, guestId: priya.id, arrival: addDays(today, -1), departure: addDays(today, 2), room: "612", partySize: 1 });
+  await learn(priya.id, "dietary", "allergy", "shellfish", "guest");
+  await request(priya.id, ps.id, "housekeeping", "Housekeeping: extra towels", ["extra towels"], new Date(now.getTime() - 25 * 60_000), "new");
+
+  // Marcus: first stay, tomorrow.
+  const marcus = await guest("+14165550133", "Marcus", "Lee");
+  await store.createStay({ hotelId: hotel.id, guestId: marcus.id, arrival: addDays(today, 1), departure: addDays(today, 3), partySize: 2 });
+
+  // Elena: left yesterday, anniversary on file.
+  const elena = await guest("+14165550144", "Elena", "Park");
+  const es = await store.createStay({ hotelId: hotel.id, guestId: elena.id, arrival: addDays(today, -4), departure: addDays(today, -1), room: "1102", partySize: 2 });
+  await learn(elena.id, "occasion", "anniversary", "here for an anniversary", "guest");
+  await learn(elena.id, "preference", "coffee", "oat flat white", "guest");
+  await request(elena.id, es.id, "room_service", "Room service: bottle of champagne", ["bottle of champagne"], at(addDays(today, -3), 19));
+
+  // Jordan: a past guest who has not been back in a while.
+  const jordan = await guest("+14165550155", "Jordan", "Blake");
+  const js = await store.createStay({ hotelId: hotel.id, guestId: jordan.id, arrival: addDays(today, -78), departure: addDays(today, -75), room: "505" });
+  await store.createStay({ hotelId: hotel.id, guestId: jordan.id, arrival: addDays(today, -300), departure: addDays(today, -297), room: "505" });
+  await learn(jordan.id, "preference", "temperature", "likes the room cool", "guest");
+  await request(jordan.id, js.id, "late_checkout", "Late check-out", [], at(addDays(today, -76), 12));
+
+  await store.refreshStayStatuses(hotel.id, today);
+  return hotel;
+}

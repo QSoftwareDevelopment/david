@@ -1,0 +1,324 @@
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { z } from "zod";
+import type { Principal } from "./auth.js";
+import { defaultCampaigns } from "./campaigns.js";
+import { recall } from "./memory.js";
+import type { David } from "./service.js";
+import { EMPTY_TWIML, normalizePhone, validTwilioSignature, type RecordingSms } from "./sms.js";
+import type { Store } from "./store.js";
+import { localParts } from "./time.js";
+import { CAMPAIGN_KINDS, MEMORY_KINDS, REQUEST_KINDS, type Hotel } from "./types.js";
+
+export interface AppDeps {
+  store: Store;
+  david: David;
+  demo: boolean;
+  cronSecret?: string;
+  twilioAuthToken?: string;
+  /** Public base URL of this server, for Twilio signature checks. */
+  publicUrl?: string;
+  verify?: (token: string) => Promise<Principal | null>;
+  corsOrigins?: string[];
+  /** Demo only: the phone the simulator talks to, and a clock to move. */
+  recorder?: RecordingSms;
+  clock?: { now: Date; offsetMs: number };
+}
+
+type Vars = { hotel: Hotel; principal: Principal | null };
+
+const phoneSchema = z.string().transform((v, ctx) => {
+  const p = normalizePhone(v);
+  if (!p) ctx.addIssue({ code: "custom", message: "That doesn't look like a phone number." });
+  return p as string;
+});
+const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
+
+export function createApp(deps: AppDeps) {
+  const { store, david } = deps;
+  const app = new Hono<{ Variables: Vars }>();
+
+  app.use("*", cors({ origin: deps.corsOrigins?.length ? deps.corsOrigins : (deps.demo ? "*" : []), allowHeaders: ["authorization", "content-type", "x-hotel-id"], allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] }));
+  app.onError((err, c) => {
+    if (err instanceof z.ZodError) return c.json({ error: err.issues[0]?.message ?? "Invalid input." }, 400);
+    console.error("[http]", err);
+    return c.json({ error: err instanceof Error && /No such|opted out/.test(err.message) ? err.message : "Something went wrong." }, err instanceof Error && /No such|opted out/.test(err.message) ? 400 : 500);
+  });
+
+  app.get("/health", (c) => c.json({ ok: true, demo: deps.demo, agent: process.env.ANTHROPIC_API_KEY && process.env.DAVID_AGENT !== "rules" ? "claude" : "rules" }));
+
+  // ── Twilio ────────────────────────────────────────────────
+  const twiml = (c: { body: (s: string, status?: number, h?: Record<string, string>) => Response }) => c.body(EMPTY_TWIML, 200, { "content-type": "text/xml" });
+
+  app.post("/webhooks/twilio/sms", async (c) => {
+    const form = Object.fromEntries(Object.entries(await c.req.parseBody()).map(([k, v]) => [k, String(v)]));
+    if (deps.twilioAuthToken && !deps.demo) {
+      const url = `${(deps.publicUrl ?? new URL(c.req.url).origin).replace(/\/$/, "")}/webhooks/twilio/sms`;
+      if (!validTwilioSignature(deps.twilioAuthToken, url, form, c.req.header("x-twilio-signature"))) return c.text("Forbidden", 403);
+    }
+    const hotel = form.To ? await store.hotelBySmsNumber(form.To) : null;
+    if (!hotel || !form.From || !form.Body) return twiml(c);
+    // Twilio waits about fifteen seconds. The reply goes out through the API, so
+    // acknowledge in time whatever the model is doing.
+    const work = david.handleInbound(hotel, { from: form.From, body: form.Body, sid: form.MessageSid }).catch((e) => console.error("[inbound]", e));
+    await Promise.race([work, new Promise((r) => setTimeout(r, 12_000))]);
+    return twiml(c);
+  });
+
+  app.post("/webhooks/twilio/status", async (c) => {
+    const form = Object.fromEntries(Object.entries(await c.req.parseBody()).map(([k, v]) => [k, String(v)]));
+    if (deps.twilioAuthToken && !deps.demo) {
+      const url = `${(deps.publicUrl ?? new URL(c.req.url).origin).replace(/\/$/, "")}/webhooks/twilio/status`;
+      if (!validTwilioSignature(deps.twilioAuthToken, url, form, c.req.header("x-twilio-signature"))) return c.text("Forbidden", 403);
+    }
+    if (form.MessageSid && form.MessageStatus) await store.setMessageStatus(form.MessageSid, form.MessageStatus);
+    return c.body(null, 204);
+  });
+
+  // ── Scheduled work ────────────────────────────────────────
+  app.post("/cron/tick", async (c) => {
+    const ok = deps.demo || (deps.cronSecret && c.req.header("authorization") === `Bearer ${deps.cronSecret}`);
+    if (!ok) return c.json({ error: "Not authorised." }, 401);
+    return c.json(await david.runTick());
+  });
+
+  // ── Staff API ─────────────────────────────────────────────
+  app.use("/api/*", async (c, next) => {
+    if (c.req.path === "/api/hotels" && c.req.method === "POST") return next();
+    if (deps.demo) {
+      const hotel = (await store.hotelBySlug("harbour-house")) ?? (await store.allHotels())[0];
+      if (!hotel) return c.json({ error: "No demo hotel yet." }, 503);
+      c.set("hotel", hotel);
+      c.set("principal", null);
+      return next();
+    }
+    const token = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+    const principal = token && deps.verify ? await deps.verify(token) : null;
+    if (!principal) return c.json({ error: "Please sign in." }, 401);
+    const hotels = await store.hotelsForUser(principal.userId);
+    const wanted = c.req.header("x-hotel-id");
+    const hotel = (wanted ? hotels.find((h) => h.id === wanted) : hotels[0]) ?? null;
+    if (!hotel) return c.json({ error: "You don't have a hotel yet." }, 403);
+    c.set("hotel", hotel);
+    c.set("principal", principal);
+    return next();
+  });
+
+  // Creating a hotel is the one call that has no hotel yet, so it does its own sign-in.
+  app.post("/api/hotels", async (c) => {
+    const token = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+    const principal = deps.demo ? { userId: "00000000-0000-0000-0000-000000000000", email: null } : token && deps.verify ? await deps.verify(token) : null;
+    if (!principal) return c.json({ error: "Please sign in." }, 401);
+    const b = z.object({ name: z.string().trim().min(1).max(120), timezone: z.string().default("America/Toronto"), tone: z.string().max(300).optional(), signature: z.string().max(80).optional() }).parse(await c.req.json());
+    try { new Intl.DateTimeFormat("en", { timeZone: b.timezone }); } catch { return c.json({ error: "Unknown time zone." }, 400); }
+    const base = b.name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "hotel";
+    let slug = base;
+    for (let i = 2; await store.hotelBySlug(slug); i++) slug = `${base}-${i}`;
+    const hotel = await store.createHotel({ name: b.name, slug, timezone: b.timezone, tone: b.tone, signature: b.signature });
+    await store.addStaff(principal.userId, hotel.id, principal.email, "owner");
+    for (const k of defaultCampaigns(hotel.id)) await store.createCampaign(k);
+    return c.json({ hotel }, 201);
+  });
+
+  app.get("/api/me", async (c) => {
+    const principal = c.get("principal");
+    const hotels = principal ? await store.hotelsForUser(principal.userId) : await store.allHotels();
+    return c.json({ hotel: c.get("hotel"), hotels, user: principal, demo: deps.demo, now: david.clock().toISOString() });
+  });
+
+  app.patch("/api/hotel", async (c) => {
+    const b = z.object({
+      name: z.string().trim().min(1).max(120).optional(), timezone: z.string().optional(), tone: z.string().max(300).optional(), signature: z.string().max(80).optional(),
+      smsNumber: z.string().nullable().optional(), quietStart: z.number().int().min(0).max(23).optional(), quietEnd: z.number().int().min(0).max(23).optional(),
+      checkinTime: z.string().regex(/^\d{2}:\d{2}$/).optional(), checkoutTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+    }).parse(await c.req.json());
+    if (b.timezone) { try { new Intl.DateTimeFormat("en", { timeZone: b.timezone }); } catch { return c.json({ error: "Unknown time zone." }, 400); } }
+    const smsNumber = b.smsNumber === undefined ? undefined : b.smsNumber === null || b.smsNumber === "" ? null : normalizePhone(b.smsNumber);
+    if (b.smsNumber && !smsNumber) return c.json({ error: "That doesn't look like a phone number." }, 400);
+    return c.json({ hotel: await store.updateHotel(c.get("hotel").id, { ...b, smsNumber }) });
+  });
+
+  app.get("/api/dashboard", async (c) => {
+    const hotel = c.get("hotel");
+    const today = localParts(david.clock(), hotel.timezone).date;
+    const [stats, arrivals, urgent] = await Promise.all([
+      store.dashboard(hotel.id, today),
+      store.staysBetween(hotel.id, today, today).then(async (stays) => {
+        const guests = new Map((await store.guestsByIds(stays.map((s) => s.guestId))).map((g) => [g.id, g]));
+        const out = [];
+        for (const s of stays.filter((x) => x.arrival === today)) {
+          const g = guests.get(s.guestId);
+          if (!g) continue;
+          out.push({ stay: s, guest: g, pastStays: await store.pastStayCount(g.id, today), memories: recall(await store.memories(g.id), david.clock(), 3) });
+        }
+        return out;
+      }),
+      store.listRequests(hotel.id, { status: ["new", "in_progress"], limit: 5 }),
+    ]);
+    return c.json({ today, stats, arrivals, urgent });
+  });
+
+  // Requests
+  app.get("/api/requests", async (c) => {
+    const status = c.req.query("status")?.split(",").filter((s) => ["new", "in_progress", "done", "cancelled"].includes(s)) as ("new" | "in_progress" | "done" | "cancelled")[] | undefined;
+    const kind = REQUEST_KINDS.find((k) => k === c.req.query("kind"));
+    return c.json({ requests: await store.listRequests(c.get("hotel").id, { status: status?.length ? status : undefined, kind }) });
+  });
+  app.patch("/api/requests/:id", async (c) => {
+    const b = z.object({ status: z.enum(["new", "in_progress", "done", "cancelled"]).optional(), priority: z.enum(["normal", "urgent"]).optional(), notify: z.boolean().default(false) }).parse(await c.req.json());
+    const hotel = c.get("hotel");
+    const existing = await store.request(c.req.param("id"));
+    if (!existing || existing.hotelId !== hotel.id) return c.json({ error: "No such request." }, 404);
+    if (b.priority) await store.updateRequest(existing.id, { priority: b.priority });
+    const updated = b.status ? await david.setRequestStatus(hotel, existing.id, b.status, b.notify) : await store.request(existing.id);
+    return c.json({ request: updated });
+  });
+  app.post("/api/requests", async (c) => {
+    const b = z.object({ guestId: z.string().uuid(), kind: z.enum(REQUEST_KINDS), summary: z.string().trim().min(1).max(300), priority: z.enum(["normal", "urgent"]).default("normal") }).parse(await c.req.json());
+    const hotel = c.get("hotel");
+    const guest = await store.guest(b.guestId);
+    if (!guest || guest.hotelId !== hotel.id) return c.json({ error: "No such guest." }, 404);
+    const today = localParts(david.clock(), hotel.timezone).date;
+    const stay = await store.currentStay(guest.id, today);
+    return c.json({ request: await store.createRequest({ hotelId: hotel.id, guestId: guest.id, stayId: stay?.id ?? null, kind: b.kind, summary: b.summary, priority: b.priority, createdBy: "staff", at: david.clock() }) }, 201);
+  });
+
+  // Guests
+  app.get("/api/guests", async (c) => c.json({ guests: await store.listGuests(c.get("hotel").id, { q: c.req.query("q") }) }));
+  app.post("/api/guests", async (c) => {
+    const b = z.object({
+      phone: phoneSchema, firstName: z.string().trim().max(60).optional(), lastName: z.string().trim().max(60).optional(), vip: z.boolean().optional(),
+      consent: z.boolean().default(false),
+      stay: z.object({ arrival: date, departure: date, room: z.string().max(20).optional(), partySize: z.number().int().min(1).max(20).optional() }).optional(),
+    }).parse(await c.req.json());
+    const hotel = c.get("hotel");
+    if (b.stay && b.stay.departure <= b.stay.arrival) return c.json({ error: "Departure must be after arrival." }, 400);
+    let guest = await store.guestByPhone(hotel.id, b.phone);
+    if (!guest) guest = await store.createGuest({ hotelId: hotel.id, phone: b.phone, firstName: b.firstName, lastName: b.lastName, vip: b.vip, consent: b.consent ? "opted_in" : "unknown", consentSource: b.consent ? "staff_entered" : null });
+    else {
+      guest = (await store.updateGuest(guest.id, { firstName: b.firstName ?? guest.firstName, lastName: b.lastName ?? guest.lastName, vip: b.vip }))!;
+      if (b.consent && guest.consent === "unknown") await store.setConsent(guest.id, "opted_in", "staff_entered");
+    }
+    const stay = b.stay ? await store.createStay({ hotelId: hotel.id, guestId: guest.id, ...b.stay }) : null;
+    return c.json({ guest: await store.guest(guest.id), stay }, 201);
+  });
+  app.get("/api/guests/:id", async (c) => {
+    const hotel = c.get("hotel");
+    const guest = await store.guest(c.req.param("id"));
+    if (!guest || guest.hotelId !== hotel.id) return c.json({ error: "No such guest." }, 404);
+    const [stays, memories, requests, thread] = await Promise.all([store.staysOf(guest.id), store.memories(guest.id, true), store.recentRequests(guest.id, 40), store.thread(guest.id, 100)]);
+    return c.json({ guest, stays, memories, requests, thread });
+  });
+  app.patch("/api/guests/:id", async (c) => {
+    const b = z.object({ firstName: z.string().trim().max(60).nullable().optional(), lastName: z.string().trim().max(60).nullable().optional(), vip: z.boolean().optional(), notes: z.string().max(1000).nullable().optional() }).parse(await c.req.json());
+    const guest = await store.guest(c.req.param("id"));
+    if (!guest || guest.hotelId !== c.get("hotel").id) return c.json({ error: "No such guest." }, 404);
+    return c.json({ guest: await store.updateGuest(guest.id, b) });
+  });
+  app.post("/api/guests/:id/stays", async (c) => {
+    const b = z.object({ arrival: date, departure: date, room: z.string().max(20).optional(), partySize: z.number().int().min(1).max(20).optional() }).parse(await c.req.json());
+    const guest = await store.guest(c.req.param("id"));
+    if (!guest || guest.hotelId !== c.get("hotel").id) return c.json({ error: "No such guest." }, 404);
+    if (b.departure <= b.arrival) return c.json({ error: "Departure must be after arrival." }, 400);
+    return c.json({ stay: await store.createStay({ hotelId: guest.hotelId, guestId: guest.id, ...b }) }, 201);
+  });
+  app.patch("/api/stays/:id", async (c) => {
+    const b = z.object({ room: z.string().max(20).nullable().optional(), arrival: date.optional(), departure: date.optional(), status: z.enum(["booked", "in_house", "departed", "cancelled"]).optional(), notes: z.string().max(500).nullable().optional() }).parse(await c.req.json());
+    const stays = await store.db.query("select hotel_id from stays where id = $1", [c.req.param("id")]);
+    if (stays.rows[0]?.hotel_id !== c.get("hotel").id) return c.json({ error: "No such stay." }, 404);
+    return c.json({ stay: await store.updateStay(c.req.param("id"), b) });
+  });
+  app.post("/api/guests/:id/memories", async (c) => {
+    const b = z.object({ kind: z.enum(MEMORY_KINDS), key: z.string().trim().min(1).max(60), value: z.string().trim().min(1).max(300) }).parse(await c.req.json());
+    const guest = await store.guest(c.req.param("id"));
+    if (!guest || guest.hotelId !== c.get("hotel").id) return c.json({ error: "No such guest." }, 404);
+    return c.json({ memory: await store.learn(guest.hotelId, guest.id, { ...b, key: b.key.toLowerCase(), source: "staff" }, david.clock()) }, 201);
+  });
+  app.patch("/api/memories/:id", async (c) => {
+    const b = z.object({ hidden: z.boolean() }).parse(await c.req.json());
+    const m = await store.memory(c.req.param("id"));
+    if (!m || m.hotelId !== c.get("hotel").id) return c.json({ error: "No such memory." }, 404);
+    await store.setMemoryHidden(m.id, b.hidden);
+    return c.json({ ok: true });
+  });
+
+  // Conversations
+  app.get("/api/conversations", async (c) => c.json({ conversations: await store.conversations(c.get("hotel").id) }));
+  app.post("/api/guests/:id/messages", async (c) => {
+    const b = z.object({ body: z.string().trim().min(1).max(1000) }).parse(await c.req.json());
+    const r = await david.staffReply(c.get("hotel"), c.req.param("id"), b.body);
+    return c.json(r, 201);
+  });
+
+  // Campaigns
+  const campaignBody = z.object({
+    name: z.string().trim().min(1).max(80), kind: z.enum(CAMPAIGN_KINDS), enabled: z.boolean().default(true), offsetDays: z.number().int().min(-60).max(365),
+    sendHour: z.number().int().min(0).max(23), messageMode: z.enum(["generated", "custom"]).default("generated"), template: z.string().max(1000).default(""),
+    guidance: z.string().max(500).default(""), audience: z.object({ repeatOnly: z.boolean().optional(), vipOnly: z.boolean().optional(), minNights: z.number().int().min(1).max(60).optional() }).default({}),
+  });
+  app.get("/api/campaigns", async (c) => {
+    const hotel = c.get("hotel");
+    const [list, stats] = await Promise.all([store.campaigns(hotel.id), store.campaignStats(hotel.id)]);
+    return c.json({ campaigns: list.map((k) => ({ ...k, sent: stats.get(k.id)?.sent ?? 0, skipped: stats.get(k.id)?.skipped ?? 0 })) });
+  });
+  app.post("/api/campaigns", async (c) => {
+    const b = campaignBody.parse(await c.req.json());
+    return c.json({ campaign: await store.createCampaign({ ...b, hotelId: c.get("hotel").id }) }, 201);
+  });
+  app.patch("/api/campaigns/:id", async (c) => {
+    const b = campaignBody.omit({ kind: true }).partial().parse(await c.req.json());
+    const existing = await store.campaign(c.req.param("id"));
+    if (!existing || existing.hotelId !== c.get("hotel").id) return c.json({ error: "No such campaign." }, 404);
+    return c.json({ campaign: await store.updateCampaign(existing.id, b) });
+  });
+  app.delete("/api/campaigns/:id", async (c) => {
+    const existing = await store.campaign(c.req.param("id"));
+    if (!existing || existing.hotelId !== c.get("hotel").id) return c.json({ error: "No such campaign." }, 404);
+    await store.deleteCampaign(existing.id);
+    return c.json({ ok: true });
+  });
+  app.post("/api/campaigns/:id/preview", async (c) => {
+    const b = z.object({ guestId: z.string().uuid().nullable().optional() }).parse(await c.req.json().catch(() => ({})));
+    return c.json({ text: await david.preview(c.get("hotel"), c.req.param("id"), b.guestId ?? null) });
+  });
+
+  // Services
+  const serviceBody = z.object({
+    category: z.enum(["room_service", "housekeeping", "laundry", "amenity", "transport", "other"]), name: z.string().trim().min(1).max(80), description: z.string().max(300).default(""),
+    priceCents: z.number().int().min(0).nullable().default(null), availableFrom: z.string().nullable().default(null), availableUntil: z.string().nullable().default(null), active: z.boolean().default(true),
+  });
+  app.get("/api/services", async (c) => c.json({ services: await store.services(c.get("hotel").id) }));
+  app.post("/api/services", async (c) => c.json({ service: await store.createService({ ...serviceBody.parse(await c.req.json()), hotelId: c.get("hotel").id }) }, 201));
+  app.patch("/api/services/:id", async (c) => {
+    const b = serviceBody.partial().parse(await c.req.json());
+    const all = await store.services(c.get("hotel").id);
+    if (!all.some((s) => s.id === c.req.param("id"))) return c.json({ error: "No such service." }, 404);
+    return c.json({ service: await store.updateService(c.req.param("id"), b) });
+  });
+  app.delete("/api/services/:id", async (c) => {
+    const all = await store.services(c.get("hotel").id);
+    if (!all.some((s) => s.id === c.req.param("id"))) return c.json({ error: "No such service." }, 404);
+    await store.deleteService(c.req.param("id"));
+    return c.json({ ok: true });
+  });
+
+  // ── Demo only ─────────────────────────────────────────────
+  if (deps.demo) {
+    app.post("/api/demo/inbound", async (c) => {
+      const b = z.object({ phone: phoneSchema, body: z.string().trim().min(1).max(1000) }).parse(await c.req.json());
+      const r = await david.handleInbound(c.get("hotel"), { from: b.phone, body: b.body, sid: `SMsim${Date.now()}${Math.random().toString(36).slice(2, 6)}` });
+      return c.json({ guestId: r.guestId, reply: r.reply, requests: r.requests, escalated: r.escalated, source: r.source });
+    });
+    app.post("/api/demo/tick", async (c) => c.json(await david.runTick(c.get("hotel").id)));
+    app.post("/api/demo/clock", async (c) => {
+      const b = z.object({ advanceHours: z.number().min(-24 * 400).max(24 * 400).optional(), reset: z.boolean().optional() }).parse(await c.req.json());
+      if (deps.clock) {
+        if (b.reset) deps.clock.offsetMs = 0;
+        if (b.advanceHours) deps.clock.offsetMs += b.advanceHours * 3_600_000;
+      }
+      return c.json({ now: david.clock().toISOString() });
+    });
+  }
+
+  return app;
+}
