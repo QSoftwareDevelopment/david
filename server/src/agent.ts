@@ -300,8 +300,8 @@ const TOOLS: Anthropic.Tool[] = [
 
 export class ClaudeAgent implements Agent {
   private client: Anthropic;
-  constructor(apiKey: string, private model = process.env.DAVID_MODEL || "claude-sonnet-5-5", private fallback: Agent = new RulesAgent()) {
-    this.client = new Anthropic({ apiKey, maxRetries: 1, timeout: 20_000 });
+  constructor(apiKey: string, private model = process.env.DAVID_MODEL || "claude-sonnet-5-5", private fallback: Agent = new RulesAgent(), client?: Anthropic) {
+    this.client = client ?? new Anthropic({ apiKey, maxRetries: 1, timeout: 20_000 });
   }
 
   private system(ctx: AgentContext): string {

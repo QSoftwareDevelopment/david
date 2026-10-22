@@ -148,9 +148,11 @@ export class David {
       const guest = await this.store.guest(existing.guestId);
       if (guest && guest.consent === "opted_in") {
         const name = guest.firstName ? `${guest.firstName}, ` : "";
+        // "Housekeeping: extra towels [allergy: nuts]" reads as "extra towels" to a guest.
+        const what = updated.summary.replace(/\s*\[.*\]$/, "").replace(/^[A-Za-z][A-Za-z -]*:\s*/, "");
         const line =
-          status === "in_progress" ? `${name}our team is on it now. ${updated.summary.replace(/\s*\[.*\]$/, "")}`
-          : status === "done" ? `${name}all taken care of: ${updated.summary.replace(/\s*\[.*\]$/, "")}. Anything else, just text me.`
+          status === "in_progress" ? `${name}our team is on it now: ${what}.`
+          : status === "done" ? `${name}all taken care of: ${what}. Anything else, just text me.`
           : null;
         if (line) await this.deliver(hotel, guest, line, "david");
       }

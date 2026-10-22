@@ -149,7 +149,7 @@ test("marking a request done can tell the guest", async () => {
   const before = w.sms.sent.length;
   await w.david.setRequestStatus(w.hotel, r.requests[0]!.id, "done", true);
   assert.equal(w.sms.sent.length, before + 1);
-  assert.match(w.sms.sent.at(-1)!.body, /all taken care of/);
+  assert.match(w.sms.sent.at(-1)!.body, /all taken care of: (extra )?towels\./);
   const quiet = await inbound(w, "I need laundry done");
   await w.david.setRequestStatus(w.hotel, quiet.requests[0]!.id, "in_progress", false);
   assert.equal(w.sms.sent.length, before + 2, "only David's reply to the laundry text; no notification");

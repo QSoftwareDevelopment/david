@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "David",
+    "slug": "david-app",
+    "version": "0.1.0",
+    "scheme": "david",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0E1A2B"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.qsoftware.david"
+    },
+    "android": {
+      "package": "com.qsoftware.david",
+      "adaptiveIcon": {
+        "backgroundColor": "#0E1A2B",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {}
+  }
+}

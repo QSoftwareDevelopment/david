@@ -66,7 +66,9 @@ function itemsIn(text: string, kind: RequestKind, catalog: Service[]): string[] 
     const have = new Set([...found].map((f) => f.toLowerCase()));
     for (const m of text.matchAll(generic)) {
       const item = (m[1] ?? m[0]).trim().toLowerCase();
-      if (!have.has(item)) { found.add(item); have.add(item); }
+      // "extra towels" on the menu already covers a generic "towels".
+      const covered = [...have].some((h) => h.includes(item) || item.includes(h));
+      if (!covered) { found.add(item); have.add(item); }
     }
   }
   return [...found].slice(0, 8);

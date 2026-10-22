@@ -26,6 +26,10 @@ test("menu items are matched by name, and generic foods are still caught", () =>
   assert(understand("I'd like a pizza and a coffee", catalog).requests[0]!.items.includes("pizza"));
 });
 
+test("a menu item and the same thing said generically are one item, not two", () => {
+  assert.deepEqual(understand("could I get some extra towels", catalog).requests[0]!.items, ["Extra towels"]);
+});
+
 test("timing is kept in the guest's own words", () => {
   assert.equal(understand("towels tonight please", catalog).requests[0]!.when, "tonight");
   assert.equal(understand("breakfast at 7:30 am", catalog).requests[0]!.when?.toLowerCase(), "at 7:30 am");
