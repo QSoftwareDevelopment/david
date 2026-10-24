@@ -55,8 +55,20 @@ export function isDemoMode(): boolean {
   }
 }
 
+/** On web, `?as=laundry` opens the demo as that person. Used by the studio's phone frames. */
+function initialView(): string {
+  if (Platform.OS !== 'web' || typeof window === 'undefined' || !window.location) return 'self';
+  try {
+    const as = new URLSearchParams(window.location.search).get('as');
+    return as && ['owner', 'manager', 'front_desk', 'room_service', 'restaurant', 'housekeeping', 'laundry', 'maintenance'].includes(as) ? as : 'self';
+  } catch {
+    return 'self';
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const demo = useMemo(isDemoMode, []);
+  const startView = useMemo(() => (isDemoMode() ? initialView() : 'self'), []);
   const [status, setStatus] = useState<AuthStatus>('restoring');
   const [session, setSession] = useState<Session | null>(null);
   const [hotel, setHotel] = useState<Hotel | null>(null);
@@ -65,8 +77,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const hotelId = useRef<string | null>(null);
   const [access, setAccess] = useState<Access>({ role: 'owner', department: null });
   const [actual, setActual] = useState<Access>({ role: 'owner', department: null });
-  const [viewAs, setViewAsState] = useState('self');
-  const viewAsRef = useRef('self');
+  const [viewAs, setViewAsState] = useState(startView);
+  const viewAsRef = useRef(startView);
 
   useEffect(() => {
     setApiSession({

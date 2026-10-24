@@ -16,11 +16,13 @@ const hotelOf = (r: Row): Hotel => ({
   id: r.id, name: r.name, slug: r.slug, timezone: r.timezone, smsNumber: r.sms_number, tone: r.tone, signature: r.signature,
   quietStart: r.quiet_start, quietEnd: r.quiet_end, checkinTime: r.checkin_time, checkoutTime: r.checkout_time,
   reviewUrl: r.review_url ?? null, briefingHour: r.briefing_hour ?? 7,
+  whatsappNumber: r.whatsapp_number ?? null, whatsappTemplates: (r.whatsapp_templates ?? {}) as Record<string, string>,
   square: { connected: !!(r.square_access_token && r.square_location_id), locationId: r.square_location_id ?? null, environment: r.square_environment ?? "production", syncedAt: r.square_synced_at ? iso(r.square_synced_at) : null },
 });
 const guestOf = (r: Row): Guest => ({
   id: r.id, hotelId: r.hotel_id, phone: r.phone, firstName: r.first_name, lastName: r.last_name, language: r.language,
   consent: r.consent, consentAt: r.consent_at ? iso(r.consent_at) : null, vip: r.vip, notes: r.notes, createdAt: iso(r.created_at),
+  channel: r.channel === "whatsapp" ? "whatsapp" : "sms",
 });
 const stayOf = (r: Row): Stay => ({
   id: r.id, hotelId: r.hotel_id, guestId: r.guest_id, room: r.room, arrival: day(r.arrival), departure: day(r.departure),
@@ -39,7 +41,7 @@ const requestOf = (r: Row): GuestRequest => ({
 });
 const messageOf = (r: Row): Message => ({
   id: r.id, hotelId: r.hotel_id, guestId: r.guest_id, direction: r.direction, author: r.author, body: r.body, status: r.status,
-  campaignId: r.campaign_id, createdAt: iso(r.created_at),
+  campaignId: r.campaign_id, createdAt: iso(r.created_at), channel: r.channel === "whatsapp" ? "whatsapp" : "sms",
 });
 const campaignOf = (r: Row): Campaign => ({
   id: r.id, hotelId: r.hotel_id, name: r.name, kind: r.kind, enabled: r.enabled, offsetDays: r.offset_days, sendHour: r.send_hour,
@@ -73,6 +75,18 @@ export class Store {
     const { rows } = await this.db.query("select * from hotels where sms_number = $1", [number]);
     return rows[0] ? hotelOf(rows[0]) : null;
   }
+  async hotelByWhatsappNumber(number: string): Promise<Hotel | null> {
+    const { rows } = await this.db.query("select * from hotels where whatsapp_number = $1", [number]);
+    return rows[0] ? hotelOf(rows[0]) : null;
+  }
+  async setGuestChannel(guestId: string, channel: "sms" | "whatsapp"): Promise<void> {
+    await this.db.query("update guests set channel = $2 where id = $1", [guestId, channel]);
+  }
+  /** When the guest last wrote to us. WhatsApp allows free-text replies for 24 hours after this. */
+  async lastInboundAt(guestId: string): Promise<Date | null> {
+    const { rows } = await this.db.query("select max(created_at) as at from messages where guest_id = $1 and direction = 'in'", [guestId]);
+    return rows[0]?.at ? new Date(rows[0].at as string) : null;
+  }
   async allHotels(): Promise<Hotel[]> {
     const { rows } = await this.db.query("select * from hotels order by name");
     return rows.map(hotelOf);
@@ -88,13 +102,14 @@ export class Store {
     );
     return hotelOf(rows[0]!);
   }
-  async updateHotel(id: string, p: Partial<Pick<Hotel, "name" | "timezone" | "smsNumber" | "tone" | "signature" | "quietStart" | "quietEnd" | "checkinTime" | "checkoutTime" | "reviewUrl" | "briefingHour">>): Promise<Hotel | null> {
+  async updateHotel(id: string, p: Partial<Pick<Hotel, "name" | "timezone" | "smsNumber" | "tone" | "signature" | "quietStart" | "quietEnd" | "checkinTime" | "checkoutTime" | "reviewUrl" | "briefingHour" | "whatsappNumber" | "whatsappTemplates">>): Promise<Hotel | null> {
     const { rows } = await this.db.query(
       `update hotels set name = coalesce($2, name), timezone = coalesce($3, timezone), sms_number = case when $4::boolean then $5 else sms_number end,
          tone = coalesce($6, tone), signature = coalesce($7, signature), quiet_start = coalesce($8, quiet_start), quiet_end = coalesce($9, quiet_end),
          checkin_time = coalesce($10, checkin_time), checkout_time = coalesce($11, checkout_time),
-         review_url = case when $12::boolean then $13 else review_url end, briefing_hour = coalesce($14, briefing_hour) where id = $1 returning *`,
-      [id, p.name ?? null, p.timezone ?? null, p.smsNumber !== undefined, p.smsNumber ?? null, p.tone ?? null, p.signature ?? null, p.quietStart ?? null, p.quietEnd ?? null, p.checkinTime ?? null, p.checkoutTime ?? null, p.reviewUrl !== undefined, p.reviewUrl ?? null, p.briefingHour ?? null],
+         review_url = case when $12::boolean then $13 else review_url end, briefing_hour = coalesce($14, briefing_hour),
+         whatsapp_number = case when $15::boolean then $16 else whatsapp_number end, whatsapp_templates = coalesce($17::jsonb, whatsapp_templates) where id = $1 returning *`,
+      [id, p.name ?? null, p.timezone ?? null, p.smsNumber !== undefined, p.smsNumber ?? null, p.tone ?? null, p.signature ?? null, p.quietStart ?? null, p.quietEnd ?? null, p.checkinTime ?? null, p.checkoutTime ?? null, p.reviewUrl !== undefined, p.reviewUrl ?? null, p.briefingHour ?? null, p.whatsappNumber !== undefined, p.whatsappNumber ?? null, p.whatsappTemplates ? JSON.stringify(p.whatsappTemplates) : null],
     );
     return rows[0] ? hotelOf(rows[0]) : null;
   }
@@ -244,6 +259,16 @@ export class Store {
     await this.db.query("update guests set consent = $2, consent_at = now(), consent_source = $3 where id = $1", [id, consent, source]);
   }
   /** Guests for the staff list, with what staff scan for: when, how many stays, what is open. */
+  async memoriesForGuests(ids: string[]): Promise<Map<string, Memory[]>> {
+    const out = new Map<string, Memory[]>();
+    if (ids.length === 0) return out;
+    const { rows } = await this.db.query("select * from memories where guest_id = any($1::uuid[]) and not hidden order by kind, key", [ids]);
+    for (const r of rows) {
+      const m = memoryOf(r);
+      out.set(m.guestId, [...(out.get(m.guestId) ?? []), m]);
+    }
+    return out;
+  }
   async listGuests(hotelId: string, opts: { q?: string; limit?: number } = {}) {
     const q = opts.q?.trim();
     const { rows } = await this.db.query(
@@ -365,10 +390,10 @@ export class Store {
   }
 
   // ── Messages ─────────────────────────────────────────────
-  async addMessage(input: { hotelId: string; guestId: string; direction: "in" | "out"; author: MessageAuthor; body: string; twilioSid?: string | null; status?: string; campaignId?: string | null; at?: Date }): Promise<Message> {
+  async addMessage(input: { hotelId: string; guestId: string; direction: "in" | "out"; author: MessageAuthor; body: string; twilioSid?: string | null; status?: string; campaignId?: string | null; at?: Date; channel?: "sms" | "whatsapp" }): Promise<Message> {
     const { rows } = await this.db.query(
-      "insert into messages (hotel_id, guest_id, direction, author, body, twilio_sid, status, campaign_id, created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,coalesce($9, now())) returning *",
-      [input.hotelId, input.guestId, input.direction, input.author, input.body.slice(0, 1600), input.twilioSid ?? null, input.status ?? (input.direction === "in" ? "received" : "sent"), input.campaignId ?? null, input.at?.toISOString() ?? null]);
+      "insert into messages (hotel_id, guest_id, direction, author, body, twilio_sid, status, campaign_id, created_at, channel) values ($1,$2,$3,$4,$5,$6,$7,$8,coalesce($9, now()),coalesce($10,'sms')) returning *",
+      [input.hotelId, input.guestId, input.direction, input.author, input.body.slice(0, 1600), input.twilioSid ?? null, input.status ?? (input.direction === "in" ? "received" : "sent"), input.campaignId ?? null, input.at?.toISOString() ?? null, input.channel ?? null]);
     return messageOf(rows[0]!);
   }
   async messageBySid(sid: string): Promise<Message | null> {
@@ -376,7 +401,7 @@ export class Store {
     return rows[0] ? messageOf(rows[0]) : null;
   }
   async thread(guestId: string, limit = 100): Promise<Message[]> {
-    const { rows } = await this.db.query("select * from (select * from messages where guest_id = $1 order by created_at desc limit $2) t order by created_at", [guestId, limit]);
+    const { rows } = await this.db.query("select * from (select * from messages where guest_id = $1 order by created_at desc, seq desc limit $2) t order by created_at, seq", [guestId, limit]);
     return rows.map(messageOf);
   }
   async lastOutboundAt(guestId: string, author?: MessageAuthor): Promise<Date | null> {
@@ -396,7 +421,7 @@ export class Store {
     const { rows } = await this.db.query(
       `select distinct on (m.guest_id) m.*, g.first_name, g.last_name, g.phone, g.consent,
               (select count(*) from requests r where r.guest_id = g.id and r.status in ('new','in_progress'))::int as open_requests
-         from messages m join guests g on g.id = m.guest_id where m.hotel_id = $1 order by m.guest_id, m.created_at desc`, [hotelId]);
+         from messages m join guests g on g.id = m.guest_id where m.hotel_id = $1 order by m.guest_id, m.created_at desc, m.seq desc`, [hotelId]);
     return rows.map((r) => ({ guestId: r.guest_id as string, guestName: [r.first_name, r.last_name].filter(Boolean).join(" ") || (r.phone as string), phone: r.phone as string, consent: r.consent as Consent,
       last: messageOf(r), openRequests: r.open_requests as number })).sort((a, b) => b.last.createdAt.localeCompare(a.last.createdAt)).slice(0, limit);
   }

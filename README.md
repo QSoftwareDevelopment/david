@@ -19,6 +19,8 @@ mobile app for the business. Everything hotel-specific is new.
 | **Departments and roles** | One app, several views. The owner or concierge sees the main window: every department's open count, longest wait and urgent items, plus arrivals, guests and messages. Room service, restaurant, laundry, housekeeping, maintenance and front desk staff see only their own queue and can mark requests started or done, with no guest profiles or messages. Owners and managers can switch to any department's view. |
 | **Tells your team where they already look** | Each request goes to its department's phone (a text) and/or a Slack or Teams webhook. If nobody picks it up in time, David nudges the department once, then tells the manager once. The manager also gets a short morning briefing: who is arriving, what they asked for, who is late. Staff never have to open the app. |
 | **Asks how it's going** | Pre-arrival text collects dietary needs and arrival time (a late arrival warns the night desk). A 1 to 10 check-in mid-stay and after: 9 or 10 gets your review link, 7 or 8 gets "what could we do better", 6 or lower goes straight to the duty manager. |
+| **Guest catalogue** | Tap any guest for a personal card: an at-a-glance line, then Food & drink, Room & comfort, Housekeeping, Laundry, Occasions and Dislikes, each noting who told us (they did, David noticed, staff) and what they actually order ("Oat flat white ×6"). It also lists what is still worth asking. |
+| **SMS and WhatsApp** | One Twilio webhook serves both. David answers on whichever app the guest wrote from, from the hotel's matching number. Guests are one person across both. WhatsApp's own rules are handled: free text only within 24 hours of the guest's last message, an approved template to start a conversation, and an SMS fallback when there isn't one. |
 | **Remembers each guest** | Allergies and diets, pillows, room, coffee, occasions, and habits David notices ("oat flat white, mornings, third stay"). Memories last across stays, say where they came from, and can be hidden by staff. |
 | **Offers, never assumes** | A remembered habit is offered as a question ("your usual oat flat white?"). Allergies travel with every food order to the kitchen. |
 | **Texts first, carefully** | Campaigns by moment in the stay. Only to guests who agreed to texts, never in quiet hours, at most one a day, STOP always honoured. David writes each message from what he remembers, or sends the hotel's exact words. |
@@ -58,10 +60,17 @@ The demo hotel ("The Harbour House") has a menu, five campaigns and five guests 
 stay, including a regular David already knows. Open **More → Guest phone (demo)** to text David as a guest and
 watch the staff app react. **Skip ahead one day** moves the clock and runs the day's campaigns.
 
+## The studio (every stakeholder, on one screen)
+
+With the demo running, open `http://localhost:8090/studio?demo=1` in a desktop browser. Sign in (any email and password for now),
+then use the sidebar to flip between the owner, concierge, front desk, kitchen, restaurant, housekeeping, laundry and
+maintenance. Each is the real app in a phone-sized frame, opened as that person. "Guest catalogue" shows everyone David knows,
+"Guest phone" lets you text David as a guest (SMS or WhatsApp), and "Show guest phone" puts it beside any other view.
+
 ## Tests
 
 ```bash
-cd server && npm test        # 141 tests: memory, understanding, campaigns, texting rules, the Claude agent
+cd server && npm test        # 159 tests: memory, understanding, campaigns, texting rules, the Claude agent
                              # (scripted), the HTTP API and Twilio signatures, all on in-memory Postgres
 cd app && npm test && npm run typecheck
 ```

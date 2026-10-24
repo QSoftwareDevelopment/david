@@ -17,6 +17,8 @@ export async function seedDemo(store: Store, now: Date = new Date()): Promise<Ho
     name: "The Harbour House", slug: "harbour-house", timezone: "America/Toronto", smsNumber: "+14165550100",
     tone: "warm, polished and brief, like a great concierge", signature: "- David",
   });
+  // Twilio's WhatsApp sandbox number, so the demo can show a guest on WhatsApp.
+  await store.updateHotel(hotel.id, { whatsappNumber: "+14155238886" });
   const today = localParts(now, hotel.timezone).date;
 
   const svc = (category: any, name: string, description = "", priceCents: number | null = null, from: string | null = null, until: string | null = null) =>

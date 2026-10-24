@@ -102,7 +102,25 @@ Run `supabase/migrations/0004_alerts_and_feedback.sql`. Then in the app: More, A
 - Ratings: the mid-stay and thank-you campaigns ask for a 1 to 10. Existing hotels keep the wording they already have;
   edit those two campaigns (or reset to the new defaults) so they ask. Add your review link under Hotel settings.
 
-## 8. Before the first real guest
+## 8. WhatsApp
+
+WhatsApp runs through the same Twilio account and the same webhook as SMS. Three things differ, and they come from WhatsApp, not David:
+
+1. **A WhatsApp sender.** In Twilio, register a WhatsApp sender for the hotel (this goes through Meta's business verification, and takes
+   days to weeks). To try it today, use Twilio's WhatsApp sandbox: join it from a phone, and point its "when a message comes in"
+   webhook at `https://YOUR-SERVER/webhooks/twilio/sms`, the same URL as SMS. Then enter the sender number under Hotel settings, WhatsApp.
+2. **Starting a conversation needs a template.** WhatsApp lets a business send free text only within 24 hours of the guest's last message.
+   Before that, it must be an approved template. Create one per moment in Twilio's Content Template Builder (two variables: `{{1}}` is the
+   guest's first name, `{{2}}` the hotel name), get it approved, and paste its ID (starts with HX) next to that campaign in Hotel
+   settings. David uses the template when the window is closed; with no template he sends an SMS instead.
+3. **Consent and cost.** Guests must have agreed to hear from the hotel on WhatsApp (the same booking consent as SMS is the usual route;
+   have counsel confirm the wording). Meta charges per delivered message for business-started templates, by category and country,
+   and replies inside the 24-hour window are free. Check Meta's current rate card.
+
+A guest is one person across both apps: David replies on whichever they used last, and everything lands in one thread.
+Facebook Messenger and Instagram are separate Meta products and are not built.
+
+## 9. Before the first real guest
 
 - Add guests with **Guest agreed to receive texts** ticked only when they genuinely agreed at booking.
 - Fill in **Menu & services**: it is the only thing David will offer.

@@ -3,15 +3,16 @@ import React, { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { patch, post } from '@/api/client';
-import type { Guest, GuestRequest, Memory, Message, Stay } from '@/api/types';
+import type { Catalogue, Guest, GuestRequest, Memory, Message, Stay } from '@/api/types';
 import { useFetch } from '@/api/useFetch';
 import { addDays, isDate, localDate } from '@/dates';
 import { useAuth } from '@/auth/AuthProvider';
 import { dateShort, fullName, MEMORY_LABEL, nights, prettyPhone, REQUEST_LABEL, timeAgo } from '@/format';
 import { colors, font, fonts, radius, space } from '@/theme';
+import { CatalogueView } from '@/ui/CatalogueView';
 import { Avatar, Badge, Button, Card, Chip, Empty, Field, Loading, Problem, Row, Screen, SectionLabel } from '@/ui/kit';
 
-type Profile = { guest: Guest; stays: Stay[]; memories: Memory[]; requests: GuestRequest[]; thread: Message[] };
+type Profile = { guest: Guest; stays: Stay[]; memories: Memory[]; requests: GuestRequest[]; thread: Message[]; catalogue?: Catalogue };
 
 const SOURCE: Record<Memory['source'], string> = { guest: 'They told us', observed: 'David noticed', staff: 'Added by staff' };
 const KINDS = ['preference', 'dietary', 'dislike', 'occasion', 'habit'] as const;
@@ -121,29 +122,28 @@ export default function GuestScreen() {
             <View style={{ width: 6 }} />
             {stays.filter((s) => s.status === 'departed').length > 0 ? <Badge label={`${stays.filter((s) => s.status === 'departed').length} past stay${stays.filter((s) => s.status === 'departed').length === 1 ? '' : 's'}`} tone="brass" /> : <Badge label="First stay" tone="info" />}
             <View style={{ width: 6 }} />
-            {guest.consent === 'opted_out' ? <Badge label="Opted out" tone="danger" /> : guest.consent === 'unknown' ? <Badge label="No consent yet" tone="warn" /> : <Badge label="Texting on" tone="ok" />}
+            {guest.consent === 'opted_out' ? <Badge label="Opted out" tone="danger" /> : guest.consent === 'unknown' ? <Badge label="No consent yet" tone="warn" /> : <Badge label={guest.channel === 'whatsapp' ? 'WhatsApp on' : 'Texting on'} tone="ok" />}
           </Row>
         </View>
       </Row>
 
-      <SectionLabel right={<Text onPress={() => setAdding(!adding)} style={{ color: colors.ink, fontWeight: '700' }}>{adding ? 'Cancel' : 'Add note'}</Text>}>What David remembers</SectionLabel>
-      <Card tone={visible.length ? 'brass' : undefined}>
-        {adding ? (
-          <View style={{ marginBottom: space.md }}>
-            <Row style={{ flexWrap: 'wrap' }}>{KINDS.map((k) => <Chip key={k} label={MEMORY_LABEL[k]!} on={k === kind} onPress={() => setKind(k)} />)}</Row>
-            <Field label="About (optional)" value={key} onChangeText={setKey} placeholder="pillows, newspaper, allergy…" />
-            <Field label="What to remember" value={value} onChangeText={setValue} placeholder="Firm pillows, FT every morning" />
-            {addError ? <Text style={{ color: colors.danger, marginBottom: space.sm }}>{addError}</Text> : null}
-            <Button label="Save" disabled={!value.trim()} onPress={addMemory} />
-          </View>
-        ) : null}
-        {visible.length === 0 && !adding ? <Empty title="Nothing yet" body="David learns from what this guest says and asks for. You can add notes too." /> : null}
-        {visible.map((m) => (
-          <MemoryRow key={m.id} m={m} onHide={async () => { await patch(`/api/memories/${m.id}`, { hidden: true }); await reload(); }} />
-        ))}
-        {hidden.length > 0 ? <Text style={{ color: colors.muted, fontSize: font.xs, marginTop: space.sm }}>Hidden from David: {hidden.length}</Text> : null}
-        {hidden.map((m) => <MemoryRow key={m.id} m={m} onHide={async () => { await patch(`/api/memories/${m.id}`, { hidden: false }); await reload(); }} />)}
-      </Card>
+      <SectionLabel right={<Text onPress={() => setAdding(!adding)} style={{ color: colors.ink, fontWeight: '700' }}>{adding ? 'Cancel' : 'Add note'}</Text>}>What we know</SectionLabel>
+      {adding ? (
+        <Card>
+          <Row style={{ flexWrap: 'wrap' }}>{KINDS.map((k) => <Chip key={k} label={MEMORY_LABEL[k]!} on={k === kind} onPress={() => setKind(k)} />)}</Row>
+          <Field label="About (optional)" value={key} onChangeText={setKey} placeholder="pillows, newspaper, allergy…" />
+          <Field label="What to remember" value={value} onChangeText={setValue} placeholder="Firm pillows, FT every morning" />
+          {addError ? <Text style={{ color: colors.danger, marginBottom: space.sm }}>{addError}</Text> : null}
+          <Button label="Save" disabled={!value.trim()} onPress={addMemory} />
+        </Card>
+      ) : null}
+      {data.catalogue ? <CatalogueView catalogue={data.catalogue} onHide={async (memoryId) => { await patch(`/api/memories/${memoryId}`, { hidden: true }); await reload(); }} /> : null}
+      {hidden.length > 0 ? (
+        <Card>
+          <Text style={{ color: colors.muted, fontSize: font.xs, marginBottom: space.xs }}>Hidden from David: {hidden.length}</Text>
+          {hidden.map((m) => <MemoryRow key={m.id} m={m} onHide={async () => { await patch(`/api/memories/${m.id}`, { hidden: false }); await reload(); }} />)}
+        </Card>
+      ) : null}
 
       <SectionLabel right={<Text onPress={() => { setStayOpen(!stayOpen); if (!arrival) { setArrival(today); setDeparture(addDays(today, 2)); } }} style={{ color: colors.ink, fontWeight: '700' }}>{stayOpen ? 'Cancel' : 'Add stay'}</Text>}>Stays</SectionLabel>
       {stayOpen ? (
@@ -189,7 +189,7 @@ export default function GuestScreen() {
                 <Text style={{ color: mine && m.author !== 'staff' ? colors.inverse : colors.text, fontSize: font.md }}>{m.body}</Text>
               </View>
               <Text style={{ color: colors.muted, fontSize: 11, marginTop: 2 }}>
-                {m.author === 'guest' ? 'Guest' : m.author === 'staff' ? 'You' : m.author === 'campaign' ? 'David (campaign)' : 'David'} · {timeAgo(m.createdAt)}{m.status === 'failed' ? ' · not delivered' : ''}
+                {m.author === 'guest' ? 'Guest' : m.author === 'staff' ? 'You' : m.author === 'campaign' ? 'David (campaign)' : 'David'} · {timeAgo(m.createdAt)}{m.channel === 'whatsapp' ? ' · WhatsApp' : ''}{m.status === 'failed' ? ' · not delivered' : ''}
               </Text>
             </View>
           );

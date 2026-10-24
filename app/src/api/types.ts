@@ -5,14 +5,23 @@ export interface Hotel {
   id: string; name: string; slug: string; timezone: string; smsNumber: string | null; tone: string; signature: string;
   quietStart: number; quietEnd: number; checkinTime: string; checkoutTime: string;
   reviewUrl?: string | null; briefingHour?: number;
+  whatsappNumber?: string | null; whatsappTemplates?: Record<string, string>;
   square?: SquareStatus;
 }
 export interface SquareStatus { connected: boolean; locationId: string | null; environment: 'production' | 'sandbox'; syncedAt: string | null }
 export interface Guest {
   id: string; hotelId: string; phone: string; firstName: string | null; lastName: string | null; language: string;
-  consent: Consent; vip: boolean; notes: string | null; createdAt: string;
+  consent: Consent; vip: boolean; notes: string | null; createdAt: string; channel?: 'sms' | 'whatsapp';
 }
-export interface GuestRow extends Guest { stayCount: number; lastArrival: string | null; openRequests: number; memoryCount: number }
+export interface CatalogueLine { text: string; source: 'guest' | 'observed' | 'staff'; sure: boolean; memoryId: string }
+export interface CatalogueSection { key: string; title: string; department: Department | null; lines: CatalogueLine[]; orders: { item: string; count: number }[]; facts: string[] }
+export interface Catalogue {
+  highlights: string[];
+  stats: { stays: number; pastStays: number; nights: number; firstArrival: string | null; lastArrival: string | null; requests: number; memories: number };
+  sections: CatalogueSection[];
+  gaps: string[];
+}
+export interface GuestRow extends Guest { stayCount: number; lastArrival: string | null; openRequests: number; memoryCount: number; interests?: string[] }
 export interface Stay { id: string; guestId: string; room: string | null; arrival: string; departure: string; partySize: number; status: 'booked' | 'in_house' | 'departed' | 'cancelled'; notes: string | null; eta?: string | null }
 export interface Memory { id: string; guestId: string; kind: string; key: string; value: string; confidence: number; evidence: number; source: 'guest' | 'observed' | 'staff'; hidden: boolean; lastSeen: string }
 export interface GuestRequest {
@@ -20,7 +29,7 @@ export interface GuestRequest {
   details: Record<string, unknown>; squareOrderId?: string | null; squareError?: string | null;
 }
 export interface RequestRow extends GuestRequest { guestName: string; room: string | null; department?: Department }
-export interface Message { id: string; direction: 'in' | 'out'; author: 'guest' | 'david' | 'staff' | 'campaign'; body: string; status: string; createdAt: string }
+export interface Message { id: string; direction: 'in' | 'out'; author: 'guest' | 'david' | 'staff' | 'campaign'; body: string; status: string; createdAt: string; channel?: 'sms' | 'whatsapp' }
 export interface Conversation { guestId: string; guestName: string; phone: string; consent: Consent; last: Message; openRequests: number }
 export interface Campaign {
   id: string; name: string; kind: string; enabled: boolean; offsetDays: number; sendHour: number; messageMode: 'generated' | 'custom';

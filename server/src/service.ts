@@ -4,7 +4,7 @@ import { Alerts } from "./alerts.js";
 import { isLateEta } from "./arrivals.js";
 import { habitsFrom, recall } from "./memory.js";
 import { etaIn, ratingIn, type ProposedRequest } from "./intents.js";
-import { commandOf, helpReply, isRestart, normalizePhone, startReply, stopReply, trimForSms, type SmsProvider } from "./sms.js";
+import { commandOf, helpReply, isRestart, parseAddress, startReply, stopReply, trimForSms, type Channel, type SendInput, type SmsProvider } from "./sms.js";
 import { HttpSquare, type SquareFactory } from "./square.js";
 import type { Store } from "./store.js";
 import { addDays, localParts } from "./time.js";
@@ -119,23 +119,29 @@ export class David {
   }
 
   /** Send a text and keep a record, whatever happens. Returns whether it left. */
-  private async deliver(hotel: Hotel, guest: Guest, body: string, author: "david" | "staff" | "campaign", campaignId: string | null = null): Promise<{ sent: boolean; messageId: string }> {
+  private async deliver(hotel: Hotel, guest: Guest, body: string, author: "david" | "staff" | "campaign", campaignId: string | null = null, opts: { channel?: Channel; template?: SendInput["template"] } = {}): Promise<{ sent: boolean; messageId: string }> {
     const text = trimForSms(body, 1000);
+    // Answer on the app they used last, as long as the hotel has a number for it.
+    const wanted = opts.channel ?? guest.channel ?? "sms";
+    const channel: Channel = wanted === "whatsapp" && hotel.whatsappNumber ? "whatsapp" : "sms";
+    const from = channel === "whatsapp" ? hotel.whatsappNumber! : this.from(hotel);
     let sid: string | null = null;
     let sent = true;
     try {
-      sid = (await this.sms.send({ from: this.from(hotel), to: guest.phone, body: text })).sid;
+      sid = (await this.sms.send({ from, to: guest.phone, body: text, channel, template: channel === "whatsapp" ? opts.template : undefined })).sid;
     } catch (error) {
       sent = false;
       console.error("[sms] send failed:", error instanceof Error ? error.message : error);
     }
-    const m = await this.store.addMessage({ hotelId: hotel.id, guestId: guest.id, direction: "out", author, body: text, twilioSid: sid, status: sent ? "sent" : "failed", campaignId, at: this.clock() });
+    const m = await this.store.addMessage({ hotelId: hotel.id, guestId: guest.id, direction: "out", author, body: text, twilioSid: sid, status: sent ? "sent" : "failed", campaignId, at: this.clock(), channel });
     return { sent, messageId: m.id };
   }
 
   /** A text arrived for this hotel. */
-  async handleInbound(hotel: Hotel, input: { from: string; body: string; sid?: string | null }): Promise<InboundResult> {
-    const phone = normalizePhone(input.from);
+  async handleInbound(hotel: Hotel, input: { from: string; body: string; sid?: string | null; channel?: Channel }): Promise<InboundResult> {
+    const parsed = parseAddress(input.from);
+    const phone = parsed.phone;
+    const channel: Channel = input.channel ?? parsed.channel;
     const body = input.body.trim();
     const none: InboundResult = { duplicate: false, guestId: null, reply: null, requests: [], escalated: false, source: "none" };
     if (!phone || !body) return none;
@@ -147,7 +153,12 @@ export class David {
     const cmd = commandOf(body);
     if (!guest) guest = await this.store.createGuest({ hotelId: hotel.id, phone, consent: cmd === "stop" ? "opted_out" : "opted_in", consentSource: "inbound_text" });
 
-    await this.store.addMessage({ hotelId: hotel.id, guestId: guest.id, direction: "in", author: "guest", body, twilioSid: input.sid ?? null, at: now });
+    // Reply where they wrote from.
+    if ((guest.channel ?? "sms") !== channel) {
+      await this.store.setGuestChannel(guest.id, channel);
+      guest = { ...guest, channel };
+    }
+    await this.store.addMessage({ hotelId: hotel.id, guestId: guest.id, direction: "in", author: "guest", body, twilioSid: input.sid ?? null, at: now, channel });
 
     // The words every texting service must honour come before anything else.
     if (cmd === "stop") {
@@ -308,12 +319,26 @@ export class David {
     for (const d of due) {
       const memories = recall(await this.store.memories(d.guest.id), now);
       const firstOutbound = (await this.store.lastOutboundAt(d.guest.id)) === null;
-      const text = await this.agent.compose({ hotel, guest: d.guest, stay: d.stay, memories, campaign: d.campaign, now, pastStays: d.pastStays, firstOutbound });
-      const { sent, messageId } = await this.deliver(hotel, d.guest, text, "campaign", d.campaign.id);
+      const plan = await this.channelFor(hotel, d.guest, d.campaign.kind, now);
+      const text = plan.template ? `[WhatsApp template: ${d.campaign.name}]` : await this.agent.compose({ hotel, guest: d.guest, stay: d.stay, memories, campaign: d.campaign, now, pastStays: d.pastStays, firstOutbound });
+      const { sent, messageId } = await this.deliver(hotel, d.guest, text, "campaign", d.campaign.id, plan);
       await this.store.recordSend({ campaignId: d.campaign.id, hotelId: hotel.id, guestId: d.guest.id, stayId: d.campaign.kind === "win_back" ? null : d.stay.id, scheduledFor: d.scheduledFor, status: sent ? "sent" : "failed", messageId, reason: sent ? null : "send_failed" });
       sent ? out.sent++ : out.failed++;
     }
     return out;
+  }
+
+  /**
+   * How to reach a guest when David speaks first. On WhatsApp the hotel may only send free text within 24 hours of the
+   * guest's last message; after that it must use a template Meta has approved. With no template for this campaign, text them instead.
+   */
+  private async channelFor(hotel: Hotel, guest: Guest, kind: string, now: Date): Promise<{ channel: Channel; template?: SendInput["template"] }> {
+    if (guest.channel !== "whatsapp" || !hotel.whatsappNumber) return { channel: "sms" };
+    const last = await this.store.lastInboundAt(guest.id);
+    if (last && now.getTime() - last.getTime() < 24 * 3600_000) return { channel: "whatsapp" };
+    const contentSid = hotel.whatsappTemplates?.[kind];
+    if (contentSid) return { channel: "whatsapp", template: { contentSid, variables: { "1": guest.firstName ?? "there", "2": hotel.name } } };
+    return { channel: "sms" };
   }
 
   /** What a campaign would say to a particular guest, without sending it. */

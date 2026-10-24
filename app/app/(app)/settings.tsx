@@ -6,6 +6,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { colors, font, space } from '@/theme';
 import { Button, Chip, Field, Row, Screen, SectionLabel } from '@/ui/kit';
 
+const TEMPLATE_KINDS = [['pre_arrival', 'Before they arrive'], ['arrival_day', 'Arrival day'], ['mid_stay', 'During the stay'], ['post_stay', 'After they leave'], ['win_back', 'Bring them back']] as const;
 const TONES = ['warm, polished and brief', 'friendly and relaxed', 'formal and refined', 'playful and upbeat'];
 
 export default function Settings() {
@@ -18,6 +19,8 @@ export default function Settings() {
   const [quietEnd, setQuietEnd] = useState('8');
   const [checkin, setCheckin] = useState('15:00');
   const [checkout, setCheckout] = useState('11:00');
+  const [whatsapp, setWhatsapp] = useState('');
+  const [templates, setTemplates] = useState<Record<string, string>>({});
   const [reviewUrl, setReviewUrl] = useState('');
   const [briefing, setBriefing] = useState('7');
   const [busy, setBusy] = useState(false);
@@ -27,6 +30,7 @@ export default function Settings() {
     if (!hotel) return;
     setName(hotel.name); setTone(hotel.tone); setSignature(hotel.signature); setNumber(hotel.smsNumber ?? '');
     setQuietStart(String(hotel.quietStart)); setQuietEnd(String(hotel.quietEnd)); setCheckin(hotel.checkinTime); setCheckout(hotel.checkoutTime);
+    setWhatsapp(hotel.whatsappNumber ?? ''); setTemplates(hotel.whatsappTemplates ?? {});
     setReviewUrl(hotel.reviewUrl ?? ''); setBriefing(String(hotel.briefingHour ?? 7));
   }, [hotel]);
 
@@ -34,7 +38,7 @@ export default function Settings() {
     setBusy(true);
     setMsg(null);
     try {
-      await patch('/api/hotel', { name: name.trim(), tone: tone.trim(), signature: signature.trim(), smsNumber: number.trim() || null, quietStart: Number(quietStart), quietEnd: Number(quietEnd), checkinTime: checkin, checkoutTime: checkout, reviewUrl: reviewUrl.trim() || null, briefingHour: Number(briefing) });
+      await patch('/api/hotel', { name: name.trim(), tone: tone.trim(), signature: signature.trim(), smsNumber: number.trim() || null, quietStart: Number(quietStart), quietEnd: Number(quietEnd), checkinTime: checkin, checkoutTime: checkout, reviewUrl: reviewUrl.trim() || null, briefingHour: Number(briefing), whatsappNumber: whatsapp.trim() || null, whatsappTemplates: Object.fromEntries(TEMPLATE_KINDS.map(([k]) => [k, (templates[k] ?? '').trim()])) });
       await refresh();
       setMsg({ ok: true, text: 'Saved.' });
     } catch (e) {
@@ -66,6 +70,12 @@ export default function Settings() {
         <Text style={{ width: space.md }} />
         <Field label="Check-out" value={checkout} onChangeText={setCheckout} style={{ width: 120 }} />
       </Row>
+      <SectionLabel>WhatsApp</SectionLabel>
+      <Field label="Hotel's WhatsApp number" value={whatsapp} onChangeText={setWhatsapp} keyboardType="phone-pad" placeholder="+1 415 523 8886" />
+      <Text style={{ color: colors.muted, marginTop: -space.sm, marginBottom: space.md, fontSize: font.sm }}>Guests who message this number get answered on WhatsApp. WhatsApp only lets David send free text within 24 hours of the guest's last message. To message first after that, add the ID of a template Meta has approved for each moment below (it looks like HX followed by 32 letters and numbers). With no template, David texts them instead.</Text>
+      {TEMPLATE_KINDS.map(([k, label]) => (
+        <Field key={k} label={`Template: ${label}`} value={templates[k] ?? ''} onChangeText={(v) => setTemplates({ ...templates, [k]: v })} autoCapitalize="none" autoCorrect={false} placeholder="HX…" />
+      ))}
       <SectionLabel>Feedback</SectionLabel>
       <Field label="Review link" value={reviewUrl} onChangeText={setReviewUrl} autoCapitalize="none" autoCorrect={false} placeholder="https://g.page/r/your-hotel/review" />
       <Text style={{ color: colors.muted, marginTop: -space.sm, marginBottom: space.md, fontSize: font.sm }}>When a guest rates their stay 9 or 10 after they leave, David sends them here. Anyone who scores 6 or lower is passed to your duty manager instead.</Text>

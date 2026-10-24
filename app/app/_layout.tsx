@@ -16,6 +16,8 @@ function Gate() {
 
   useEffect(() => {
     if (status === 'restoring') return;
+    // The studio (web) and sign-in previews inside it manage themselves.
+    if (segments[0] === 'studio' || (typeof window !== 'undefined' && window.location?.search?.includes('preview=1'))) return;
     const inAuth = segments[0] === '(auth)';
     if (status === 'signedIn' && inAuth) router.replace('/(app)/(tabs)');
     else if (status !== 'signedIn' && !inAuth) router.replace('/(auth)/sign-in');

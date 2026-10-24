@@ -23,6 +23,7 @@ const IDEAS = [
 export default function Simulator() {
   const guests = useFetch<{ guests: GuestRow[] }>('/api/guests');
   const [phone, setPhone] = useState<string | null>(null);
+  const [channel, setChannel] = useState<'sms' | 'whatsapp'>('sms');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -35,7 +36,7 @@ export default function Simulator() {
     setBusy(true);
     setErr(null);
     try {
-      await post('/api/demo/inbound', { phone, body: body.trim() });
+      await post('/api/demo/inbound', { phone, body: body.trim(), channel });
       setText('');
       await profile.reload();
       await guests.reload();
@@ -61,6 +62,10 @@ export default function Simulator() {
   return (
     <Screen>
       <Text style={{ color: colors.muted, marginBottom: space.md }}>Pick a guest, then text the hotel as them. David answers the same way he would on a real phone.</Text>
+      <Row style={{ marginBottom: space.sm }}>
+        <Chip label="SMS" on={channel === 'sms'} onPress={() => setChannel('sms')} />
+        <Chip label="WhatsApp" on={channel === 'whatsapp'} onPress={() => setChannel('whatsapp')} />
+      </Row>
       {!guests.data ? <Loading /> : null}
       <Row style={{ flexWrap: 'wrap' }}>
         {guests.data?.guests.map((g) => <Chip key={g.id} label={fullName(g)} on={g.phone === phone} onPress={() => setPhone(g.phone)} />)}
@@ -69,7 +74,7 @@ export default function Simulator() {
       {phone ? (
         <>
           <Card style={{ backgroundColor: '#EDEBE4' }}>
-            <Text style={{ textAlign: 'center', color: colors.muted, fontSize: font.xs, marginBottom: space.sm }}>{picked ? fullName(picked) : ''} · {prettyPhone(phone)}</Text>
+            <Text style={{ textAlign: 'center', color: colors.muted, fontSize: font.xs, marginBottom: space.sm }}>{picked ? fullName(picked) : ''} · {prettyPhone(phone)} · {channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}</Text>
             {(profile.data?.thread ?? []).length === 0 ? <Text style={{ color: colors.muted, textAlign: 'center' }}>No messages yet. Say hello.</Text> : null}
             {(profile.data?.thread ?? []).map((m) => {
               const me = m.direction === 'in';

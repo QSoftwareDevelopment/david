@@ -6,8 +6,9 @@ import { defaultCampaigns } from "./campaigns.js";
 import { DEPARTMENTS, canManage, departmentOf, isDepartment, isScoped, kindsOf, type Access, type Department } from "./departments.js";
 import { safeWebhookUrl } from "./alerts.js";
 import { arrivalsOn } from "./arrivals.js";
+import { buildCatalogue, interestsOf } from "./catalogue.js";
 import type { David } from "./service.js";
-import { EMPTY_TWIML, normalizePhone, validTwilioSignature, type RecordingSms } from "./sms.js";
+import { EMPTY_TWIML, normalizePhone, parseAddress, validTwilioSignature, type RecordingSms } from "./sms.js";
 import type { Store } from "./store.js";
 import { localParts } from "./time.js";
 import { CAMPAIGN_KINDS, MEMORY_KINDS, REQUEST_KINDS, type Hotel } from "./types.js";
@@ -58,11 +59,13 @@ export function createApp(deps: AppDeps) {
       const url = `${(deps.publicUrl ?? new URL(c.req.url).origin).replace(/\/$/, "")}/webhooks/twilio/sms`;
       if (!validTwilioSignature(deps.twilioAuthToken, url, form, c.req.header("x-twilio-signature"))) return c.text("Forbidden", 403);
     }
-    const hotel = form.To ? await store.hotelBySmsNumber(form.To) : null;
-    if (!hotel || !form.From || !form.Body) return twiml(c);
+    // The same webhook serves SMS and WhatsApp: Twilio marks WhatsApp numbers as `whatsapp:+1...`.
+    const to = form.To ? parseAddress(form.To) : null;
+    const hotel = to?.phone ? (to.channel === "whatsapp" ? await store.hotelByWhatsappNumber(to.phone) : await store.hotelBySmsNumber(to.phone)) : null;
+    if (!hotel || !to || !form.From || !form.Body) return twiml(c);
     // Twilio waits about fifteen seconds. The reply goes out through the API, so
     // acknowledge in time whatever the model is doing.
-    const work = david.handleInbound(hotel, { from: form.From, body: form.Body, sid: form.MessageSid }).catch((e) => console.error("[inbound]", e));
+    const work = david.handleInbound(hotel, { from: form.From, body: form.Body, sid: form.MessageSid, channel: to.channel }).catch((e) => console.error("[inbound]", e));
     await Promise.race([work, new Promise((r) => setTimeout(r, 12_000))]);
     return twiml(c);
   });
@@ -161,13 +164,21 @@ export function createApp(deps: AppDeps) {
       smsNumber: z.string().nullable().optional(), quietStart: z.number().int().min(0).max(23).optional(), quietEnd: z.number().int().min(0).max(23).optional(),
       checkinTime: z.string().regex(/^\d{2}:\d{2}$/).optional(), checkoutTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
       reviewUrl: z.string().trim().max(500).nullable().optional(), briefingHour: z.number().int().min(0).max(23).optional(),
+      whatsappNumber: z.string().nullable().optional(),
+      // Twilio Content SIDs look like HX followed by 32 hex characters. A blank clears one.
+      whatsappTemplates: z.record(z.enum(CAMPAIGN_KINDS), z.string().trim().regex(/^(HX[0-9a-fA-F]{32})?$/, "A WhatsApp template ID looks like HX followed by 32 letters and numbers.")).optional(),
     }).parse(await c.req.json());
     if (b.reviewUrl) { try { if (new URL(b.reviewUrl).protocol !== "https:") throw new Error(); } catch { return c.json({ error: "The review link should start with https://" }, 400); } }
     if (b.reviewUrl === "") b.reviewUrl = null;
     if (b.timezone) { try { new Intl.DateTimeFormat("en", { timeZone: b.timezone }); } catch { return c.json({ error: "Unknown time zone." }, 400); } }
     const smsNumber = b.smsNumber === undefined ? undefined : b.smsNumber === null || b.smsNumber === "" ? null : normalizePhone(b.smsNumber);
     if (b.smsNumber && !smsNumber) return c.json({ error: "That doesn't look like a phone number." }, 400);
-    return c.json({ hotel: await store.updateHotel(c.get("hotel").id, { ...b, smsNumber }) });
+    const whatsappNumber = b.whatsappNumber === undefined ? undefined : b.whatsappNumber === null || b.whatsappNumber === "" ? null : parseAddress(b.whatsappNumber).phone;
+    if (b.whatsappNumber && !whatsappNumber) return c.json({ error: "That doesn't look like a WhatsApp number." }, 400);
+    const whatsappTemplates = b.whatsappTemplates
+      ? Object.fromEntries(Object.entries({ ...c.get("hotel").whatsappTemplates, ...b.whatsappTemplates }).filter(([, v]) => v))
+      : undefined;
+    return c.json({ hotel: await store.updateHotel(c.get("hotel").id, { ...b, smsNumber, whatsappNumber, whatsappTemplates }) });
   });
 
   const arrivalsToday = (hotelId: string, today: string) => arrivalsOn(store, david.clock(), hotelId, today);
@@ -339,7 +350,11 @@ export function createApp(deps: AppDeps) {
   });
 
   // Guests
-  app.get("/api/guests", async (c) => c.json({ guests: await store.listGuests(c.get("hotel").id, { q: c.req.query("q") }) }));
+  app.get("/api/guests", async (c) => {
+    const guests = await store.listGuests(c.get("hotel").id, { q: c.req.query("q") });
+    const memories = await store.memoriesForGuests(guests.map((g) => g.id));
+    return c.json({ guests: guests.map((g) => ({ ...g, interests: interestsOf(memories.get(g.id) ?? []) })) });
+  });
   app.post("/api/guests", async (c) => {
     const b = z.object({
       phone: phoneSchema, firstName: z.string().trim().max(60).optional(), lastName: z.string().trim().max(60).optional(), vip: z.boolean().optional(),
@@ -361,8 +376,9 @@ export function createApp(deps: AppDeps) {
     const hotel = c.get("hotel");
     const guest = await store.guest(c.req.param("id"));
     if (!guest || guest.hotelId !== hotel.id) return c.json({ error: "No such guest." }, 404);
-    const [stays, memories, requests, thread] = await Promise.all([store.staysOf(guest.id), store.memories(guest.id, true), store.recentRequests(guest.id, 40), store.thread(guest.id, 100)]);
-    return c.json({ guest, stays, memories, requests, thread });
+    const [stays, memories, requests, thread, history] = await Promise.all([store.staysOf(guest.id), store.memories(guest.id, true), store.recentRequests(guest.id, 40), store.thread(guest.id, 100), store.recentRequests(guest.id, 300)]);
+    const today = localParts(david.clock(), hotel.timezone).date;
+    return c.json({ guest, stays, memories, requests, thread, catalogue: buildCatalogue({ guest, memories, requests: history, stays, today, now: david.clock() }) });
   });
   app.patch("/api/guests/:id", async (c) => {
     const b = z.object({ firstName: z.string().trim().max(60).nullable().optional(), lastName: z.string().trim().max(60).nullable().optional(), vip: z.boolean().optional(), notes: z.string().max(1000).nullable().optional() }).parse(await c.req.json());
@@ -460,8 +476,8 @@ export function createApp(deps: AppDeps) {
   // ── Demo only ─────────────────────────────────────────────
   if (deps.demo) {
     app.post("/api/demo/inbound", async (c) => {
-      const b = z.object({ phone: phoneSchema, body: z.string().trim().min(1).max(1000) }).parse(await c.req.json());
-      const r = await david.handleInbound(c.get("hotel"), { from: b.phone, body: b.body, sid: `SMsim${Date.now()}${Math.random().toString(36).slice(2, 6)}` });
+      const b = z.object({ phone: phoneSchema, body: z.string().trim().min(1).max(1000), channel: z.enum(["sms", "whatsapp"]).default("sms") }).parse(await c.req.json());
+      const r = await david.handleInbound(c.get("hotel"), { from: b.phone, body: b.body, channel: b.channel, sid: `SMsim${Date.now()}${Math.random().toString(36).slice(2, 6)}` });
       return c.json({ guestId: r.guestId, reply: r.reply, requests: r.requests, escalated: r.escalated, source: r.source });
     });
     app.post("/api/demo/tick", async (c) => c.json(await david.runTick(c.get("hotel").id)));

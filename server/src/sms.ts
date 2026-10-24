@@ -69,20 +69,46 @@ export function validTwilioSignature(authToken: string, url: string, params: Rec
 }
 
 /** Everything that can send a text. Production uses Twilio; tests and the demo record. */
+/** Which app a guest is using to talk to the hotel. */
+export type Channel = "sms" | "whatsapp";
+
+/** Twilio addresses WhatsApp numbers as `whatsapp:+14165550100`. This splits that into a phone and a channel. */
+export function parseAddress(raw: string): { phone: string | null; channel: Channel } {
+  const m = raw.trim().match(/^whatsapp:\s*(.*)$/i);
+  return { phone: normalizePhone(m ? m[1]! : raw), channel: m ? "whatsapp" : "sms" };
+}
+export const addressFor = (phone: string, channel: Channel): string => (channel === "whatsapp" ? `whatsapp:${phone}` : phone);
+
+export interface SendInput {
+  from: string;
+  to: string;
+  body: string;
+  channel?: Channel;
+  /** WhatsApp only: send an approved template instead of free text (needed outside the 24-hour window). */
+  template?: { contentSid: string; variables: Record<string, string> };
+}
+
 export interface SmsProvider {
-  send(input: { from: string; to: string; body: string }): Promise<{ sid: string }>;
+  send(input: SendInput): Promise<{ sid: string }>;
 }
 
 export class TwilioSms implements SmsProvider {
-  constructor(private accountSid: string, private authToken: string) {}
-  async send({ from, to, body }: { from: string; to: string; body: string }): Promise<{ sid: string }> {
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Messages.json`, {
+  constructor(private accountSid: string, private authToken: string, private fetchImpl: typeof fetch = fetch) {}
+  async send({ from, to, body, channel = "sms", template }: SendInput): Promise<{ sid: string }> {
+    const params = new URLSearchParams({ From: addressFor(from, channel), To: addressFor(to, channel) });
+    if (template) {
+      params.set("ContentSid", template.contentSid);
+      params.set("ContentVariables", JSON.stringify(template.variables));
+    } else {
+      params.set("Body", body);
+    }
+    const res = await this.fetchImpl(`https://api.twilio.com/2010-04-01/Accounts/${this.accountSid}/Messages.json`, {
       method: "POST",
       headers: {
         authorization: `Basic ${Buffer.from(`${this.accountSid}:${this.authToken}`).toString("base64")}`,
         "content-type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({ From: from, To: to, Body: body }),
+      body: params,
       signal: AbortSignal.timeout(15_000),
     });
     const data = (await res.json().catch(() => ({}))) as { sid?: string; message?: string };
@@ -93,8 +119,8 @@ export class TwilioSms implements SmsProvider {
 
 /** Remembers what it was asked to send. For tests and the local demo. */
 export class RecordingSms implements SmsProvider {
-  sent: { from: string; to: string; body: string; sid: string }[] = [];
-  async send(input: { from: string; to: string; body: string }): Promise<{ sid: string }> {
+  sent: (SendInput & { sid: string })[] = [];
+  async send(input: SendInput): Promise<{ sid: string }> {
     const sid = `SMdemo${this.sent.length + 1}${Math.random().toString(36).slice(2, 8)}`;
     this.sent.push({ ...input, sid });
     return { sid };

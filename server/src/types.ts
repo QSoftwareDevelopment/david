@@ -13,6 +13,10 @@ export interface Hotel {
   checkinTime: string;
   checkoutTime: string;
   /** Where happy guests are sent to leave a review. */
+  /** The hotel's WhatsApp number, if it has one (E.164). */
+  whatsappNumber?: string | null;
+  /** Approved WhatsApp template (Twilio Content SID) for each campaign kind. */
+  whatsappTemplates?: Record<string, string>;
   reviewUrl?: string | null;
   /** Local hour the manager's morning briefing goes out. */
   briefingHour?: number;
@@ -32,6 +36,8 @@ export interface Guest {
   vip: boolean;
   notes: string | null;
   createdAt: string;
+  /** Where they last wrote from, so replies go the same way. */
+  channel?: "sms" | "whatsapp";
 }
 
 export type StayStatus = "booked" | "in_house" | "departed" | "cancelled";
@@ -116,6 +122,7 @@ export interface Message {
   status: string;
   campaignId: string | null;
   createdAt: string;
+  channel?: "sms" | "whatsapp";
 }
 
 export const CAMPAIGN_KINDS = ["pre_arrival", "arrival_day", "mid_stay", "post_stay", "win_back", "custom"] as const;

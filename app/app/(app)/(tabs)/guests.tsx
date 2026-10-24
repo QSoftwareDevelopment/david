@@ -49,8 +49,13 @@ export default function Guests() {
                 {g.openRequests > 0 ? <View style={{ marginTop: 4 }}><Badge label={`${g.openRequests} open`} tone="info" /></View> : null}
               </View>
             </Row>
-            <Text style={{ color: colors.muted, fontSize: font.sm, marginTop: space.sm }}>
-              {g.stayCount} stay{g.stayCount === 1 ? '' : 's'} · {g.memoryCount} thing{g.memoryCount === 1 ? '' : 's'} remembered
+            {g.interests && g.interests.length > 0 ? (
+              <Text style={{ color: colors.text, fontSize: font.sm, marginTop: space.sm }}>{g.interests.join(' · ')}</Text>
+            ) : (
+              <Text style={{ color: colors.muted, fontSize: font.sm, marginTop: space.sm }}>Still getting to know them</Text>
+            )}
+            <Text style={{ color: colors.muted, fontSize: font.xs, marginTop: 4 }}>
+              {g.stayCount} stay{g.stayCount === 1 ? '' : 's'} · {g.memoryCount} thing{g.memoryCount === 1 ? '' : 's'} known
             </Text>
           </Card>
         );
