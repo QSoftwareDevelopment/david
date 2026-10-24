@@ -116,12 +116,30 @@ const summaryFor = (kind: RequestKind, items: string[], when: string | null, tex
     case "amenities": return `Amenities: ${list || shorten(text)}${w}`;
     case "maintenance": return `Maintenance: ${shorten(text)}`;
     case "transport": return `Transport: ${shorten(text)}${w}`;
-    case "restaurant": return `Restaurant: ${shorten(text)}`;
+    case "restaurant": return `Restaurant: ${bookingSummary(text) ?? shorten(text)}`;
     case "late_checkout": return `Late check-out${w || ": " + shorten(text)}`;
     case "early_checkin": return `Early check-in${w || ": " + shorten(text)}`;
     default: return shorten(text);
   }
 };
+
+/** What a restaurant request is for: the party, the day, the time and any occasion. */
+export function bookingParts(text: string): { party: string; day: string | null; time: string | null; occasion: string | null } | null {
+  const t = text.replace(/\s+/g, " ");
+  const party = t.match(/\b(?:table|reservation|booking)\s+for\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i)?.[1] ?? t.match(/\bfor\s+(\d+|two|three|four|five|six|seven|eight|nine|ten)\s*(?:people|guests|of us|pax)\b/i)?.[1];
+  if (!party) return null;
+  const day = t.match(/\b(tonight|tomorrow(?: night| evening| morning)?|today|this (?:evening|afternoon)|on (?:mon|tues|wednes|thurs|fri|satur|sun)day)\b/i)?.[1];
+  const time = t.match(/\b(?:at|around|about|by)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i)?.[1]?.replace(/\s+/g, "");
+  const occasion = t.match(/\b(anniversary|birthday|honeymoon|proposal|engagement|wedding|graduation|babymoon)\b/i)?.[1];
+  return { party: party.toLowerCase(), day: day?.toLowerCase() ?? null, time: time ?? null, occasion: occasion?.toLowerCase() ?? null };
+}
+
+/** "Could we book a table for two tonight at 7:30? It's our anniversary." becomes "table for two tonight at 7:30, an anniversary". */
+export function bookingSummary(text: string): string | null {
+  const b = bookingParts(text);
+  if (!b) return null;
+  return `table for ${b.party}${b.day ? ` ${b.day}` : ""}${b.time ? ` at ${b.time}` : ""}${b.occasion ? `, ${/^[aeiou]/.test(b.occasion) ? "an" : "a"} ${b.occasion}` : ""}`;
+}
 
 const shorten = (s: string) => (s.length > 120 ? s.slice(0, 117).trimEnd() + "…" : s);
 
@@ -168,12 +186,14 @@ export function understand(text: string, catalog: Service[]): Understanding {
     if (rule.kind === "room_service" && seen.has("restaurant") && !/\broom service\b|\b(to|in) (my|our) room\b|\bsend (it )?up\b/i.test(clean)) continue;
     seen.add(rule.kind);
     const items = itemsIn(clean, rule.kind, catalog);
+    const booking = rule.kind === "restaurant" ? bookingParts(clean) : null;
     requests.push({
       kind: rule.kind,
       summary: summaryFor(rule.kind, items, when, clean),
       items,
       urgent: urgentWord && (rule.kind === "maintenance" || rule.kind === "housekeeping"),
-      when,
+      // A table is for a day and a time, and the restaurant needs both.
+      when: booking && (booking.day || booking.time) ? [booking.day, booking.time ? `at ${booking.time}` : null].filter(Boolean).join(" ") : when,
     });
   }
 

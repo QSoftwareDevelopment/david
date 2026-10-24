@@ -27,7 +27,11 @@ export interface Memory { id: string; guestId: string; kind: string; key: string
 export interface GuestRequest {
   id: string; guestId: string; kind: string; summary: string; status: RequestStatus; priority: 'normal' | 'urgent'; createdBy: 'david' | 'staff'; createdAt: string;
   details: Record<string, unknown>; squareOrderId?: string | null; squareError?: string | null;
+  /** Null while the request is waiting at the front desk to be sent on. */
+  dispatchedAt?: string | null; dispatchedBy?: string | null; dispatchNote?: string | null; confirmation?: Confirmation | null;
 }
+export interface Confirmation { status: 'confirmed' | 'declined' | 'seated' | 'done'; table?: string | null; time?: string | null; note?: string | null; at: string; source?: string | null }
+export interface Handoff { department: Department; headline: string; lines: string[]; text: string }
 export interface RequestRow extends GuestRequest { guestName: string; room: string | null; department?: Department }
 export interface Message { id: string; direction: 'in' | 'out'; author: 'guest' | 'david' | 'staff' | 'campaign'; body: string; status: string; createdAt: string; channel?: 'sms' | 'whatsapp' }
 export interface Conversation { guestId: string; guestName: string; phone: string; consent: Consent; last: Message; openRequests: number }
@@ -42,12 +46,13 @@ export interface Dashboard {
   arrivals: { stay: Stay; guest: Guest; pastStays: number; memories: Memory[]; asked: GuestRequest[]; touches: { text: string; because: string }[] }[];
   urgent: RequestRow[];
   scope?: Access;
+  toSend?: RequestRow[];
   board?: DepartmentStat;
   departments: DepartmentStat[];
 }
 export type Department = 'front_desk' | 'room_service' | 'restaurant' | 'housekeeping' | 'laundry' | 'maintenance';
 export interface Access { role: 'owner' | 'manager' | 'staff'; department: Department | null }
-export interface DepartmentStat { department: Department; label: string; open: number; urgent: number; doneToday: number; oldestMinutes: number | null }
+export interface DepartmentStat { department: Department; label: string; open: number; urgent: number; doneToday: number; oldestMinutes: number | null; held?: number; oldestSentMinutes?: number | null }
 export interface TeamMember { userId: string; email: string | null; role: Access['role']; department: Department | null }
 export interface TeamInvite { id: string; email: string; role: Access['role']; department: Department | null; createdAt: string }
 export interface Team { members: TeamMember[]; invites: TeamInvite[] }

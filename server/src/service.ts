@@ -2,13 +2,16 @@ import { planDue } from "./campaigns.js";
 import { signoff, type Agent, type AgentContext } from "./agent.js";
 import { Alerts } from "./alerts.js";
 import { isLateEta } from "./arrivals.js";
+import { buildCatalogue } from "./catalogue.js";
+import { DEPARTMENT_LABEL, departmentOf } from "./departments.js";
+import { buildHandoff, type Handoff } from "./handoff.js";
 import { habitsFrom, recall } from "./memory.js";
 import { etaIn, ratingIn, type ProposedRequest } from "./intents.js";
 import { commandOf, helpReply, isRestart, parseAddress, startReply, stopReply, trimForSms, type Channel, type SendInput, type SmsProvider } from "./sms.js";
 import { HttpSquare, type SquareFactory } from "./square.js";
 import type { Store } from "./store.js";
 import { addDays, localParts } from "./time.js";
-import type { Guest, GuestRequest, Hotel, RequestStatus, Stay } from "./types.js";
+import type { Confirmation, Guest, GuestRequest, Hotel, RequestStatus, Stay } from "./types.js";
 
 /**
  * Everything David does, in one place: take a text, answer it, log what the
@@ -253,6 +256,81 @@ export class David {
     if (guest.consent === "opted_out") throw new Error("This guest has opted out of texts.");
     const { sent } = await this.deliver(hotel, guest, body, "staff");
     return { sent };
+  }
+
+  // ── The front desk sends requests on ─────────────────────
+
+  /** The briefing a department gets with a request: the ask, plus what we know that it will act on. */
+  async handoffFor(hotel: Hotel, request: GuestRequest, note: string | null = null): Promise<Handoff | null> {
+    const guest = await this.store.guest(request.guestId);
+    if (!guest) return null;
+    const now = this.clock();
+    const today = localParts(now, hotel.timezone).date;
+    const [stay, stays, memories, all] = await Promise.all([
+      request.stayId ? this.store.stay(request.stayId) : this.store.currentStay(guest.id, today),
+      this.store.staysOf(guest.id), this.store.memories(guest.id), this.store.recentRequests(guest.id, 300),
+    ]);
+    const catalogue = buildCatalogue({ guest, memories, requests: all, stays, today, now });
+    const history = all.filter((r) => departmentOf(r.kind) === departmentOf(request.kind));
+    return buildHandoff({ hotel, request, guest, stay, catalogue, history, note, now });
+  }
+
+  /**
+   * Send a request on to its department with its briefing: to the department's phone or channel, and to its
+   * reservation or POS system if one is connected. If that system can't be reached nothing is marked sent, so
+   * the button can simply be pressed again.
+   */
+  async dispatchRequest(hotel: Hotel, requestId: string, by: string, note: string | null = null): Promise<{ request: GuestRequest; delivered: { text: boolean; system: boolean | null }; error?: string } | null> {
+    const request = await this.store.request(requestId);
+    if (!request || request.hotelId !== hotel.id) return null;
+    const handoff = await this.handoffFor(hotel, request, note);
+    if (!handoff) return null;
+    const department = departmentOf(request.kind);
+    const contact = (await this.store.contacts(hotel.id)).find((c) => c.department === department);
+
+    let system: boolean | null = null;
+    if (contact?.integrationUrl) {
+      const r = await this.alerts.integrate(contact, handoff.payload, `david-${request.id}`);
+      if (!r.ok) return { request, delivered: { text: false, system: false }, error: `${DEPARTMENT_LABEL[department]}'s system didn't take it: ${r.error}` };
+      system = true;
+    }
+    const text = await this.alerts.tell(hotel, department, handoff.text);
+    const done = (await this.store.markDispatched(request.id, by, note, this.clock())) ?? request;
+    return { request: done, delivered: { text, system } };
+  }
+
+  /** Send everything waiting at the desk. Returns how many went and which couldn't. */
+  async dispatchAll(hotel: Hotel, by: string): Promise<{ sent: number; failed: { id: string; error: string }[] }> {
+    const out = { sent: 0, failed: [] as { id: string; error: string }[] };
+    for (const r of await this.store.heldRequests(hotel.id)) {
+      const res = await this.dispatchRequest(hotel, r.id, by);
+      if (res && !res.error) out.sent++;
+      else out.failed.push({ id: r.id, error: res?.error ?? "Could not send." });
+    }
+    return out;
+  }
+
+  /**
+   * A department's own system tells us what happened: a table was booked, or it couldn't take the request.
+   * A booking marks the request done and tells the guest; a refusal goes straight back to the front desk.
+   */
+  async applyConfirmation(hotel: Hotel, request: GuestRequest, c: Omit<Confirmation, "at">): Promise<GuestRequest> {
+    const confirmation: Confirmation = { ...c, at: this.clock().toISOString() };
+    const stored = (await this.store.setConfirmation(request.id, confirmation)) ?? request;
+    const guest = await this.store.guest(request.guestId);
+    const dept = departmentOf(request.kind);
+    if (c.status === "declined") {
+      await this.alerts.tell(hotel, "front_desk", `${DEPARTMENT_LABEL[dept]} couldn't take it${guest ? ` · ${[guest.firstName, guest.lastName].filter(Boolean).join(" ") || guest.phone}` : ""}: ${request.summary.replace(/^[A-Za-z][A-Za-z -]*:\s*/, "").replace(/[.!?]+$/, "")}.${c.note ? ` Reason: ${c.note.replace(/[.!?]+$/, "")}.` : ""} Please offer the guest an alternative.`);
+      return stored;
+    }
+    const finished = (await this.store.updateRequest(request.id, { status: "done" })) ?? stored;
+    if (guest && guest.consent === "opted_in") {
+      const who = guest.firstName ? `, ${guest.firstName}` : "";
+      const detail = [c.time, c.table].filter(Boolean).join(", ");
+      const what = dept === "restaurant" ? "your table is confirmed" : "that's all arranged";
+      await this.deliver(hotel, guest, `Good news${who}: ${what}${detail ? ` (${detail})` : ""}.${c.note ? ` ${c.note}` : ""}${hotel.signature ? ` ${hotel.signature}` : ""}`, "david");
+    }
+    return { ...finished, confirmation };
   }
 
   /** Staff move a request along; optionally tell the guest. */

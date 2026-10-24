@@ -40,9 +40,9 @@ export async function seedDemo(store: Store, now: Date = new Date()): Promise<Ho
   const at = (date: string, hour: number, minute = 0) => new Date(zonedInstant(date, hour, hotel.timezone).getTime() + minute * 60_000);
   const guest = (phone: string, firstName: string, lastName: string, extra: { vip?: boolean } = {}) =>
     store.createGuest({ hotelId: hotel.id, phone, firstName, lastName, consent: "opted_in", consentSource: "booking_form", vip: extra.vip });
-  const request = async (g: string, stayId: string | null, kind: any, summary: string, items: string[], when: Date, status: "done" | "new" | "in_progress" = "done") => {
-    const r = await store.createRequest({ hotelId: hotel.id, guestId: g, stayId, kind, summary, details: { items } });
-    await store.db.query("update requests set created_at = $2::timestamptz, updated_at = $2::timestamptz, status = $3::text, completed_at = case when $3::text = 'done' then $2::timestamptz else null end where id = $1", [r.id, when.toISOString(), status]);
+  const request = async (g: string, stayId: string | null, kind: any, summary: string, items: string[], when: Date, status: "done" | "new" | "in_progress" = "done", details: Record<string, unknown> = {}, held = false) => {
+    const r = await store.createRequest({ hotelId: hotel.id, guestId: g, stayId, kind, summary, details: { items, ...details } });
+    await store.db.query("update requests set created_at = $2::timestamptz, updated_at = $2::timestamptz, status = $3::text, completed_at = case when $3::text = 'done' then $2::timestamptz else null end, dispatched_at = case when $4::boolean then null else $2::timestamptz end where id = $1", [r.id, when.toISOString(), status, held]);
     return r;
   };
   const learn = (g: string, kind: any, key: string, value: string, source: any = "guest", times = 1) => (async () => {
@@ -101,7 +101,10 @@ export async function seedDemo(store: Store, now: Date = new Date()): Promise<Ho
 
   // A few more open items so every department has something in its queue.
   await request(priya.id, ps.id, "laundry", "Laundry: two shirts, pressed", ["shirts"], new Date(now.getTime() - 70 * 60_000), "in_progress");
-  await request(amara.id, a2.id, "restaurant", "Restaurant: table for two tonight at 7:30, a birthday", [], new Date(now.getTime() - 55 * 60_000), "new");
+  await request(amara.id, a2.id, "restaurant", "Restaurant: table for two tonight at 7:30, a birthday", [], new Date(now.getTime() - 55 * 60_000), "new", { when: "tonight at 7:30", original: "Could we book a table for two tonight at 7:30? It's my partner's birthday." }, true);
+  // She has eaten here before: the restaurant should know.
+  const dined = await request(amara.id, a1.id, "restaurant", "Restaurant: table for two at 8pm", [], at(addDays(today, -119), 17), "done", { when: "8pm" });
+  await store.setConfirmation(dined.id, { status: "confirmed", table: "T3, Window 3", time: "8:00 pm", at: at(addDays(today, -119), 17).toISOString(), source: "demo POS" });
   await request(sam.id, null, "maintenance", "Maintenance: the desk lamp in 804 flickers", [], new Date(now.getTime() - 3 * 3600_000), "new");
 
   // The team, so the Team screen has people on it.
@@ -114,6 +117,9 @@ export async function seedDemo(store: Store, now: Date = new Date()): Promise<Ho
     ["00000000-0000-4000-8000-000000000006", "housekeeping@harbourhouse.ca", "staff", "housekeeping"],
   ];
   for (const [id, email, role, department] of team) await store.addStaff(id, hotel.id, email, role, department);
+
+  // Restaurant requests wait at the front desk, which sends them on to the restaurant's booking system.
+  await store.setContact(hotel.id, { department: "restaurant", smsNumber: null, webhookUrl: null, dispatch: "review", integrationUrl: "https://pos.demo.invalid/reservations", integrationSecret: "whsec_demo" });
 
   await store.refreshStayStatuses(hotel.id, today);
   return hotel;

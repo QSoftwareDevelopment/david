@@ -99,3 +99,13 @@ test("it reads a bare score as an answer to 'how is everything?'", () => {
   assert.equal(ratingIn("room 9"), null);
   assert.equal(ratingIn("9 towels please"), null);
 });
+
+import { bookingSummary } from "../src/intents.js";
+
+test("a table request is boiled down to what a restaurant needs", () => {
+  assert.equal(bookingSummary("Could we book a table for two tonight at 7:30? It's our anniversary."), "table for two tonight at 7:30, an anniversary");
+  assert.equal(bookingSummary("I'd like to reserve a table for 4 tomorrow at 8pm please"), "table for 4 tomorrow at 8pm");
+  assert.equal(bookingSummary("table for six this evening, it's a birthday"), "table for six this evening, a birthday");
+  assert.equal(bookingSummary("is the restaurant open?"), null);
+  assert.equal(understand("Could we book a table for two tonight at 7:30?", []).requests[0]!.summary, "Restaurant: table for two tonight at 7:30");
+});

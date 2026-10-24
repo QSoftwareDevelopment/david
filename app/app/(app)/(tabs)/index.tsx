@@ -8,7 +8,9 @@ import { useAuth } from '@/auth/AuthProvider';
 import { fullName, dateShort, nights, DEPARTMENT_LABEL, REQUEST_LABEL, timeAgo } from '@/format';
 import { colors, font, fonts, space } from '@/theme';
 import { ViewSwitcher } from '@/ui/ViewSwitcher';
-import { Avatar, Badge, Card, Empty, Loading, Problem, Row, Screen, SectionLabel, Title } from '@/ui/kit';
+import { post } from '@/api/client';
+import { DEPARTMENT_OF_KIND } from '@/format';
+import { Avatar, Badge, Button, Card, Empty, Loading, Problem, Row, Screen, SectionLabel, Title } from '@/ui/kit';
 
 const isLate = (eta: string) => { const h = Number(eta.slice(0, 2)); return h >= 22 || h < 5; };
 const etaLabel = (eta: string) => { const [h, m] = eta.split(':').map(Number) as [number, number]; return `${h % 12 === 0 ? 12 : h % 12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${h < 12 ? 'am' : 'pm'}`; };
@@ -27,6 +29,16 @@ export default function Today() {
   const router = useRouter();
   const { hotel, now, access, scoped } = useAuth();
   const { data, error, loading, reload } = useFetch<Dashboard>('/api/dashboard', { pollMs: 20_000 });
+  const [sending, setSending] = React.useState<string | null>(null);
+  async function send(id: string | 'all') {
+    setSending(id);
+    try {
+      await post(id === 'all' ? '/api/requests/dispatch-all' : `/api/requests/${id}/dispatch`);
+      await reload();
+    } finally {
+      setSending(null);
+    }
+  }
 
   // The front desk greets the day's arrivals, so it sees them; other departments don't.
   const desk = scoped && access.department === 'front_desk';
@@ -55,6 +67,27 @@ export default function Today() {
             </Row>
           )}
 
+          {data.toSend && data.toSend.length > 0 ? (
+            <>
+              <SectionLabel right={<Button small label={`Send all (${data.toSend.length})`} loading={sending === 'all'} onPress={() => void send('all')} />}>Waiting to be sent</SectionLabel>
+              {data.toSend.map((r) => (
+                <Card key={r.id} tone="brass">
+                  <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <View style={{ flex: 1, paddingRight: space.sm }}>
+                      <Text style={{ fontWeight: '700', color: colors.text }}>{r.guestName}{r.room ? ` · ${r.room}` : ''}</Text>
+                      <Text style={{ color: colors.text, marginTop: 2 }}>{r.summary}</Text>
+                      <Text style={{ color: colors.muted, fontSize: font.xs, marginTop: 2 }}>{timeAgo(r.createdAt)}</Text>
+                    </View>
+                    <Badge label={DEPARTMENT_LABEL[DEPARTMENT_OF_KIND[r.kind] ?? 'front_desk']} tone="info" />
+                  </Row>
+                  <View style={{ marginTop: space.sm, alignSelf: 'flex-start' }}>
+                    <Button small label={`Send to ${DEPARTMENT_LABEL[DEPARTMENT_OF_KIND[r.kind] ?? 'front_desk']}`} loading={sending === r.id} onPress={() => void send(r.id)} />
+                  </View>
+                </Card>
+              ))}
+            </>
+          ) : null}
+
           {!scoped && data.departments.length > 0 ? (
             <>
               <SectionLabel>Departments</SectionLabel>
@@ -64,7 +97,7 @@ export default function Today() {
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontWeight: '700', color: colors.text, fontSize: font.md }}>{d.label}</Text>
                       <Text style={{ color: colors.muted, fontSize: font.sm }}>
-                        {d.open === 0 ? 'All clear' : `${d.open} open${d.oldestMinutes != null ? ` · longest wait ${d.oldestMinutes < 60 ? `${d.oldestMinutes} min` : `${Math.floor(d.oldestMinutes / 60)}h ${d.oldestMinutes % 60}m`}` : ''}`}
+                        {d.open === 0 ? 'All clear' : `${d.open} open${d.held ? ` (${d.held} at the front desk)` : ''}${d.oldestMinutes != null ? ` · longest wait ${d.oldestMinutes < 60 ? `${d.oldestMinutes} min` : `${Math.floor(d.oldestMinutes / 60)}h ${d.oldestMinutes % 60}m`}` : ''}`}
                         {d.doneToday > 0 ? ` · ${d.doneToday} done today` : ''}
                       </Text>
                     </View>

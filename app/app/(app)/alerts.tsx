@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Switch, Text, View } from 'react-native';
 
-import { post, put } from '@/api/client';
+import { API_URL, post, put } from '@/api/client';
 import { useFetch } from '@/api/useFetch';
 import { DEPARTMENT_LABEL, type Department } from '@/format';
 import { colors, font, space } from '@/theme';
 import { Badge, Button, Card, Field, Loading, Problem, Screen } from '@/ui/kit';
 
-type Contact = { department: Department | 'manager'; smsNumber: string | null; webhookUrl: string | null };
+type Contact = { department: Department | 'manager'; smsNumber: string | null; webhookUrl: string | null; dispatch?: 'direct' | 'review'; integrationUrl?: string | null; hasSecret?: boolean; secretTail?: string | null };
 type View_ = { contacts: Contact[]; briefingHour: number };
 
 const LABEL = (d: Contact['department']) => (d === 'manager' ? 'Manager' : DEPARTMENT_LABEL[d]);
@@ -35,17 +35,22 @@ export default function Alerts() {
 function ContactCard({ contact, onSaved }: { contact: Contact; onSaved: () => void }) {
   const [sms, setSms] = useState(contact.smsNumber ?? '');
   const [hook, setHook] = useState(contact.webhookUrl ?? '');
-  const [busy, setBusy] = useState<'save' | 'test' | null>(null);
+  const [review, setReview] = useState(contact.dispatch === 'review');
+  const [system, setSystem] = useState(contact.integrationUrl ?? '');
+  const [secret, setSecret] = useState<string | null>(null);
+  const [busy, setBusy] = useState<'save' | 'test' | 'secret' | null>(null);
+  const routable = contact.department !== 'manager' && contact.department !== 'front_desk';
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  useEffect(() => { setSms(contact.smsNumber ?? ''); setHook(contact.webhookUrl ?? ''); }, [contact.smsNumber, contact.webhookUrl]);
-  const on = !!(contact.smsNumber || contact.webhookUrl);
+  useEffect(() => { setSms(contact.smsNumber ?? ''); setHook(contact.webhookUrl ?? ''); setReview(contact.dispatch === 'review'); setSystem(contact.integrationUrl ?? ''); }, [contact.smsNumber, contact.webhookUrl, contact.dispatch, contact.integrationUrl]);
+  const on = !!(contact.smsNumber || contact.webhookUrl || contact.integrationUrl);
 
   async function save() {
     setBusy('save');
     setMsg(null);
     try {
-      await put(`/api/alerts/${contact.department}`, { smsNumber: sms.trim() || null, webhookUrl: hook.trim() || null });
-      setMsg({ ok: true, text: sms.trim() || hook.trim() ? 'Saved.' : 'Cleared.' });
+      const r = await put<{ secret?: string }>(`/api/alerts/${contact.department}`, { smsNumber: sms.trim() || null, webhookUrl: hook.trim() || null, ...(routable ? { dispatch: review ? 'review' : 'direct', integrationUrl: system.trim() || null } : {}) });
+      if (r.secret) setSecret(r.secret);
+      setMsg({ ok: true, text: sms.trim() || hook.trim() || system.trim() || review ? 'Saved.' : 'Cleared.' });
       onSaved();
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : 'Could not save.' });
@@ -57,8 +62,9 @@ function ContactCard({ contact, onSaved }: { contact: Contact; onSaved: () => vo
     setBusy('test');
     setMsg(null);
     try {
-      const r = await post<{ sent: boolean }>(`/api/alerts/${contact.department}/test`);
-      setMsg(r.sent ? { ok: true, text: 'Test sent.' } : { ok: false, text: 'Nothing went out. Save a number or webhook first.' });
+      const r = await post<{ sent: boolean; system: { ok: boolean; error: string | null } | null }>(`/api/alerts/${contact.department}/test`);
+      if (r.system && !r.system.ok) setMsg({ ok: false, text: `Their system said no: ${r.system.error}` });
+      else setMsg(r.sent || r.system?.ok ? { ok: true, text: r.system?.ok ? 'Test sent, and their system answered.' : 'Test sent.' } : { ok: false, text: 'Nothing went out. Save a number or webhook first.' });
     } catch (e) {
       setMsg({ ok: false, text: e instanceof Error ? e.message : 'Could not send.' });
     } finally {
@@ -75,6 +81,34 @@ function ContactCard({ contact, onSaved }: { contact: Contact; onSaved: () => vo
       <Text style={{ color: colors.muted, fontSize: font.sm, marginBottom: space.sm }}>{ABOUT(contact.department)}</Text>
       <Field label="Text this phone" value={sms} onChangeText={setSms} keyboardType="phone-pad" placeholder="+1 416 555 0100" />
       <Field label="Post to a webhook (Slack, Teams)" value={hook} onChangeText={setHook} autoCapitalize="none" autoCorrect={false} placeholder="https://hooks.slack.com/services/..." />
+      {routable ? (
+        <>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: space.sm }}>
+            <View style={{ flex: 1, paddingRight: space.md }}>
+              <Text style={{ fontWeight: '600', color: colors.text }}>Front desk sends these on</Text>
+              <Text style={{ color: colors.muted, fontSize: font.sm }}>Requests wait at the front desk until it presses Send, with the guest's briefing attached. Urgent ones go straight through.</Text>
+            </View>
+            <Switch value={review} onValueChange={setReview} trackColor={{ true: colors.ink, false: colors.lineStrong }} accessibilityLabel={`${LABEL(contact.department)}: front desk sends these on`} />
+          </View>
+          <Field label={contact.department === 'restaurant' ? "Restaurant's booking or POS system (address)" : "This team's own system (address)"} value={system} onChangeText={setSystem} autoCapitalize="none" autoCorrect={false} placeholder="https://your-system.example.com/reservations" />
+          {contact.hasSecret || secret ? (
+            <View style={{ backgroundColor: colors.surfaceMuted, borderRadius: 14, padding: space.md, marginBottom: space.sm }}>
+              {secret ? (
+                <>
+                  <Text style={{ fontWeight: '700', color: colors.text }}>Copy this secret now. It won't be shown again.</Text>
+                  <Text selectable style={{ color: colors.text, marginTop: 4, fontFamily: 'Menlo' }}>{secret}</Text>
+                </>
+              ) : <Text style={{ color: colors.muted }}>A secret is set (ends …{contact.secretTail}). </Text>}
+              <Text style={{ color: colors.muted, fontSize: font.sm, marginTop: 6 }}>
+                David signs each booking he sends with it (X-David-Signature). To report back a table and time, their system posts {'{ requestId, status, table, time }'} to {API_URL}/webhooks/integrations/confirm with the header Authorization: Bearer secret.
+              </Text>
+              <View style={{ marginTop: space.sm, alignSelf: 'flex-start' }}>
+                <Button small variant="secondary" label="Make a new secret" loading={busy === 'secret'} onPress={async () => { setBusy('secret'); try { setSecret((await post<{ secret: string }>(`/api/alerts/${contact.department}/secret`)).secret); onSaved(); } finally { setBusy(null); } }} />
+              </View>
+            </View>
+          ) : null}
+        </>
+      ) : null}
       {msg ? <Text style={{ color: msg.ok ? colors.ok : colors.danger, marginBottom: space.sm }} accessibilityRole={msg.ok ? 'text' : 'alert'}>{msg.text}</Text> : null}
       <View style={{ flexDirection: 'row', gap: space.sm }}>
         <Button small label="Save" loading={busy === 'save'} onPress={save} />

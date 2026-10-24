@@ -15,7 +15,7 @@ import { colors, fonts } from '@/theme';
  * and password get you in.
  */
 
-type Item = { id: string; label: string; blurb: string; icon: React.ComponentProps<typeof Ionicons>['name']; path: string; as: string };
+type Item = { id: string; label: string; blurb: string; icon: React.ComponentProps<typeof Ionicons>['name']; path: string; as: string; frame?: 'tablet' };
 const GROUPS: { title: string; items: Item[] }[] = [
   {
     title: 'Stakeholders',
@@ -38,6 +38,10 @@ const GROUPS: { title: string; items: Item[] }[] = [
     ],
   },
   {
+    title: 'Their systems',
+    items: [{ id: 'pos', label: 'Restaurant system', blurb: "The restaurant's own booking and POS software (a demo stand-in): the floor map, the tables booked, and everything David sent with each booking.", icon: 'map-outline', path: '/pos', as: 'owner', frame: 'tablet' }],
+  },
+  {
     title: 'Screens',
     items: [{ id: 'signin', label: 'Sign-in', blurb: 'What staff see when they open the app.', icon: 'log-in-outline', path: '/sign-in?preview=1', as: 'owner' }],
   },
@@ -45,6 +49,8 @@ const GROUPS: { title: string; items: Item[] }[] = [
 const ALL = GROUPS.flatMap((g) => g.items);
 
 const PHONE = { w: 390, h: 844 };
+const TABLET = { w: 960, h: 640 };
+const sizeOf = (i: Item) => (i.frame === 'tablet' ? TABLET : PHONE);
 const BEZEL = 12;
 const KEY = 'david-studio-signed-in';
 
@@ -111,7 +117,8 @@ function Workspace({ onSignOut }: { onSignOut: () => void }) {
   // Fit the phone(s) to the window.
   const phones = withGuest && id !== 'phone' ? 2 : 1;
   const avail = { w: width - (wide ? 288 : 0) - 48, h: height - (wide ? 120 : 190) };
-  const full = { w: PHONE.w + BEZEL * 2, h: PHONE.h + BEZEL * 2 };
+  const dims = sizeOf(item);
+  const full = { w: dims.w + BEZEL * 2, h: dims.h + BEZEL * 2 };
   const scale = Math.max(0.35, Math.min(1, avail.h / full.h, avail.w / (full.w * phones + (phones - 1) * 32)));
 
   return (
@@ -183,17 +190,19 @@ function Phone({ item, scale }: { item: Item; scale: number }) {
     url.searchParams.set('as', item.as);
     return url.toString();
   }, [item]);
-  const outer = { w: (PHONE.w + BEZEL * 2) * scale, h: (PHONE.h + BEZEL * 2) * scale };
+  const dims = sizeOf(item);
+  const tablet = item.frame === 'tablet';
+  const outer = { w: (dims.w + BEZEL * 2) * scale, h: (dims.h + BEZEL * 2) * scale };
   return (
     <View style={{ width: outer.w, height: outer.h }}>
-      <View style={{ width: PHONE.w + BEZEL * 2, height: PHONE.h + BEZEL * 2, transform: [{ scale }], transformOrigin: 'top left' as never, backgroundColor: '#14101a', borderRadius: 58, padding: BEZEL, boxShadow: '0 24px 60px rgba(40, 10, 20, 0.28)' }}>
-        <View style={{ flex: 1, borderRadius: 46, overflow: 'hidden', backgroundColor: colors.paper }}>
+      <View style={{ width: dims.w + BEZEL * 2, height: dims.h + BEZEL * 2, transform: [{ scale }], transformOrigin: 'top left' as never, backgroundColor: '#14101a', borderRadius: tablet ? 34 : 58, padding: BEZEL, boxShadow: '0 24px 60px rgba(40, 10, 20, 0.28)' }}>
+        <View style={{ flex: 1, borderRadius: tablet ? 24 : 46, overflow: 'hidden', backgroundColor: colors.paper }}>
           {/* The status-bar strip, so the app's header clears the camera island like it does on a real phone. */}
-          <View style={{ height: 40, backgroundColor: colors.paper }} />
+          {tablet ? null : <View style={{ height: 40, backgroundColor: colors.paper }} />}
           <View style={{ flex: 1 }}>
             {React.createElement('iframe', { key: src, src, title: item.label, style: { width: '100%', height: '100%', border: 0, display: 'block' } })}
           </View>
-          <View pointerEvents="none" style={{ position: 'absolute', top: 10, alignSelf: 'center', width: 112, height: 30, borderRadius: 20, backgroundColor: '#14101a' }} />
+          {tablet ? null : <View pointerEvents="none" style={{ position: 'absolute', top: 10, alignSelf: 'center', width: 112, height: 30, borderRadius: 20, backgroundColor: '#14101a' }} />}
         </View>
       </View>
     </View>

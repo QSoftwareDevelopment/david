@@ -105,9 +105,24 @@ export interface GuestRequest {
   completedAt: string | null;
   squareOrderId?: string | null;
   squareError?: string | null;
+  /** When the front desk sent it on to its department. Null while it is waiting at the desk. */
+  dispatchedAt?: string | null;
+  dispatchedBy?: string | null;
+  dispatchNote?: string | null;
+  /** What the department's own system said back: a table, a time, or a no. */
+  confirmation?: Confirmation | null;
   notifiedAt?: string | null;
   remindedAt?: string | null;
   escalatedAt?: string | null;
+}
+
+export interface Confirmation {
+  status: "confirmed" | "declined" | "seated" | "done";
+  table?: string | null;
+  time?: string | null;
+  note?: string | null;
+  at: string;
+  source?: string | null;
 }
 
 export type MessageAuthor = "guest" | "david" | "staff" | "campaign";

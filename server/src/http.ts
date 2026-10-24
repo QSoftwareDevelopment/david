@@ -1,12 +1,14 @@
+import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { z } from "zod";
 import type { Principal } from "./auth.js";
 import { defaultCampaigns } from "./campaigns.js";
-import { DEPARTMENTS, canManage, departmentOf, isDepartment, isScoped, kindsOf, type Access, type Department } from "./departments.js";
+import { DEPARTMENTS, DEPARTMENT_LABEL, canManage, departmentOf, isDepartment, isScoped, kindsOf, type Access, type Department } from "./departments.js";
 import { safeWebhookUrl } from "./alerts.js";
 import { arrivalsOn } from "./arrivals.js";
 import { buildCatalogue, interestsOf } from "./catalogue.js";
+import type { DemoPos } from "./demopos.js";
 import type { David } from "./service.js";
 import { EMPTY_TWIML, normalizePhone, parseAddress, validTwilioSignature, type RecordingSms } from "./sms.js";
 import type { Store } from "./store.js";
@@ -25,6 +27,8 @@ export interface AppDeps {
   corsOrigins?: string[];
   /** Demo only: the phone the simulator talks to, and a clock to move. */
   recorder?: RecordingSms;
+  /** Demo only: the stand-in restaurant system. */
+  pos?: DemoPos;
   clock?: { now: Date; offsetMs: number };
 }
 
@@ -80,6 +84,23 @@ export function createApp(deps: AppDeps) {
     return c.body(null, 204);
   });
 
+  // A department's own system (a restaurant's booking or POS software) reports back: a table, a time, or a no.
+  // It identifies itself with the secret David gave it when it was connected.
+  app.post("/webhooks/integrations/confirm", async (c) => {
+    const secret = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+    const who = secret ? await store.contactBySecret(secret) : null;
+    if (!who) return c.json({ error: "Unknown or missing secret." }, 401);
+    const b = z.object({
+      requestId: z.string().uuid(), status: z.enum(["confirmed", "declined", "seated", "done"]),
+      table: z.string().trim().max(60).nullable().optional(), time: z.string().trim().max(60).nullable().optional(), note: z.string().trim().max(300).nullable().optional(),
+    }).parse(await c.req.json());
+    const request = await store.request(b.requestId);
+    const hotel = await store.hotel(who.hotelId);
+    if (!request || !hotel || request.hotelId !== who.hotelId || departmentOf(request.kind) !== who.department) return c.json({ error: "That request isn't yours." }, 404);
+    const updated = await david.applyConfirmation(hotel, request, { status: b.status, table: b.table ?? null, time: b.time ?? null, note: b.note ?? null, source: who.department });
+    return c.json({ ok: true, request: updated });
+  });
+
   // ── Scheduled work ────────────────────────────────────────
   app.post("/cron/tick", async (c) => {
     const ok = deps.demo || (deps.cronSecret && c.req.header("authorization") === `Bearer ${deps.cronSecret}`);
@@ -126,6 +147,8 @@ export function createApp(deps: AppDeps) {
   const DEPARTMENT_ROUTES: [string, RegExp][] = [
     ["GET", /^\/api\/me$/], ["GET", /^\/api\/dashboard$/], ["GET", /^\/api\/requests$/],
     ["PATCH", /^\/api\/requests\/[^/]+$/], ["POST", /^\/api\/requests\/[^/]+\/square$/],
+    // The front desk sends requests on; any department may read the briefing for its own (checked in the handler).
+    ["POST", /^\/api\/requests\/[^/]+\/dispatch$/], ["POST", /^\/api\/requests\/dispatch-all$/], ["GET", /^\/api\/requests\/[^/]+\/handoff$/],
   ];
   app.use("/api/*", async (c, next) => {
     if (c.req.path === "/api/hotels" && c.req.method === "POST") return next();
@@ -194,19 +217,25 @@ export function createApp(deps: AppDeps) {
       const board = (await store.departmentBoard(hotel.id, today, david.clock())).find((d) => d.department === access.department)!;
       const desk = access.department === "front_desk";
       const house = desk ? await store.dashboard(hotel.id, today) : null;
+      // A department only counts and sees what the front desk has sent it.
+      const waiting = board.open - board.held;
       return c.json({
-        today, scope: access, board,
-        stats: { arrivalsToday: house?.arrivalsToday ?? 0, inHouse: house?.inHouse ?? 0, departuresToday: house?.departuresToday ?? 0, openRequests: board.open, urgentRequests: board.urgent, requestsToday: board.doneToday, repeatGuestsInHouse: 0, guestsTotal: 0, memoriesTotal: 0, optedOut: 0 },
-        arrivals: desk ? await arrivalsToday(hotel.id, today) : [], urgent: await store.listRequests(hotel.id, { status: ["new", "in_progress"], kinds: scope, limit: 8 }), departments: [],
+        today, scope: access, board: { ...board, open: waiting, oldestMinutes: board.oldestSentMinutes },
+        stats: { arrivalsToday: house?.arrivalsToday ?? 0, inHouse: house?.inHouse ?? 0, departuresToday: house?.departuresToday ?? 0, openRequests: waiting, urgentRequests: board.urgent, requestsToday: board.doneToday, repeatGuestsInHouse: 0, guestsTotal: 0, memoriesTotal: 0, optedOut: 0 },
+        arrivals: desk ? await arrivalsToday(hotel.id, today) : [], departments: [],
+        urgent: await store.listRequests(hotel.id, { status: ["new", "in_progress"], kinds: scope, limit: 8, dispatchedOnly: true }),
+        toSend: desk ? await store.heldRequests(hotel.id) : [],
       });
     }
-    const [stats, arrivals, urgent, departments] = await Promise.all([
+    const [stats, arrivals, urgent, departments, toSend] = await Promise.all([
       store.dashboard(hotel.id, today),
       arrivalsToday(hotel.id, today),
-      store.listRequests(hotel.id, { status: ["new", "in_progress"], limit: 5 }),
+      // What is waiting to be sent has its own section, so it isn't listed twice.
+      store.listRequests(hotel.id, { status: ["new", "in_progress"], limit: 5, dispatchedOnly: true }),
       store.departmentBoard(hotel.id, today, david.clock()),
+      store.heldRequests(hotel.id),
     ]);
-    return c.json({ today, scope: access, stats, arrivals, urgent, departments });
+    return c.json({ today, scope: access, stats, arrivals, urgent, departments, toSend });
   });
 
   // Requests
@@ -217,7 +246,7 @@ export function createApp(deps: AppDeps) {
     const asked = c.req.query("department");
     // A department only ever gets its own kinds, whatever they ask for.
     const kinds = isScoped(access) ? kindsOf(access.department) : isDepartment(asked) ? kindsOf(asked) : undefined;
-    return c.json({ requests: await store.listRequests(c.get("hotel").id, { status: status?.length ? status : undefined, kind, kinds }) });
+    return c.json({ requests: await store.listRequests(c.get("hotel").id, { status: status?.length ? status : undefined, kind, kinds, dispatchedOnly: isScoped(access) && access.department !== "front_desk", alsoHeld: isScoped(access) && access.department === "front_desk" }) });
   });
   app.patch("/api/requests/:id", async (c) => {
     const b = z.object({ status: z.enum(["new", "in_progress", "done", "cancelled"]).optional(), priority: z.enum(["normal", "urgent"]).optional(), notify: z.boolean().default(false) }).parse(await c.req.json());
@@ -230,6 +259,31 @@ export function createApp(deps: AppDeps) {
     if (b.priority) await store.updateRequest(existing.id, { priority: b.priority });
     const updated = b.status ? await david.setRequestStatus(hotel, existing.id, b.status, b.notify) : await store.request(existing.id);
     return c.json({ request: updated });
+  });
+  // The front desk (and managers) send requests on to their department, with a briefing about the guest.
+  const canDispatch = (a: Access) => !isScoped(a) || a.department === "front_desk";
+  const actor = (c: { get: (k: "principal" | "access") => any }) => (c.get("principal") as Principal | null)?.email ?? ((c.get("access") as Access).department ? `${DEPARTMENT_LABEL[(c.get("access") as Access).department!]} (demo)` : "Front desk");
+  app.post("/api/requests/dispatch-all", async (c) => {
+    if (!canDispatch(c.get("access"))) return c.json({ error: "Only the front desk can send requests on." }, 403);
+    return c.json(await david.dispatchAll(c.get("hotel"), actor(c)));
+  });
+  app.post("/api/requests/:id/dispatch", async (c) => {
+    if (!canDispatch(c.get("access"))) return c.json({ error: "Only the front desk can send requests on." }, 403);
+    const b = z.object({ note: z.string().trim().max(300).nullable().optional() }).parse(await c.req.json().catch(() => ({})));
+    const res = await david.dispatchRequest(c.get("hotel"), c.req.param("id"), actor(c), b.note || null);
+    if (!res) return c.json({ error: "No such request." }, 404);
+    if (res.error) return c.json({ error: res.error }, 502);
+    return c.json(res);
+  });
+  app.get("/api/requests/:id/handoff", async (c) => {
+    const hotel = c.get("hotel");
+    const request = await store.request(c.req.param("id"));
+    if (!request || request.hotelId !== hotel.id) return c.json({ error: "No such request." }, 404);
+    const me = c.get("access");
+    // A department reads the briefing for its own requests, once the front desk has sent them.
+    if (isScoped(me) && me.department !== "front_desk" && (departmentOf(request.kind) !== me.department || !request.dispatchedAt)) return c.json({ error: "That request belongs to another department." }, 403);
+    const handoff = await david.handoffFor(hotel, request, request.dispatchNote ?? null);
+    return handoff ? c.json({ handoff, request }) : c.json({ error: "No such guest." }, 404);
   });
   app.post("/api/requests", async (c) => {
     const b = z.object({ guestId: z.string().uuid(), kind: z.enum(REQUEST_KINDS), summary: z.string().trim().min(1).max(300), priority: z.enum(["normal", "urgent"]).default("normal") }).parse(await c.req.json());
@@ -247,26 +301,52 @@ export function createApp(deps: AppDeps) {
   const alertKeys = [...DEPARTMENTS, "manager"] as const;
   const alertView = async (hotelId: string) => {
     const have = new Map((await store.contacts(hotelId)).map((c) => [c.department, c]));
-    return { contacts: alertKeys.map((d) => have.get(d) ?? { department: d, smsNumber: null, webhookUrl: null }), briefingHour: (await store.hotel(hotelId))?.briefingHour ?? 7 };
+    const view = (d: (typeof alertKeys)[number]) => {
+      const c = have.get(d);
+      return { department: d, smsNumber: c?.smsNumber ?? null, webhookUrl: c?.webhookUrl ?? null, dispatch: c?.dispatch ?? "direct", integrationUrl: c?.integrationUrl ?? null, hasSecret: !!c?.integrationSecret, secretTail: c?.integrationSecret ? c.integrationSecret.slice(-4) : null };
+    };
+    return { contacts: alertKeys.map(view), briefingHour: (await store.hotel(hotelId))?.briefingHour ?? 7 };
   };
+  const newSecret = () => `whsec_${randomBytes(24).toString("hex")}`;
   app.get("/api/alerts", async (c) => c.json(await alertView(c.get("hotel").id)));
   app.put("/api/alerts/:department", async (c) => {
     const department = alertKeys.find((d) => d === c.req.param("department"));
     if (!department) return c.json({ error: "No such department." }, 404);
-    const b = z.object({ smsNumber: z.string().trim().max(40).nullable().default(null), webhookUrl: z.string().trim().max(500).nullable().default(null) }).parse(await c.req.json());
+    const b = z.object({
+      smsNumber: z.string().trim().max(40).nullable().default(null), webhookUrl: z.string().trim().max(500).nullable().default(null),
+      dispatch: z.enum(["direct", "review"]).optional(), integrationUrl: z.string().trim().max(500).nullable().optional(),
+    }).parse(await c.req.json());
     const smsNumber = b.smsNumber ? normalizePhone(b.smsNumber) : null;
     if (b.smsNumber && !smsNumber) return c.json({ error: "That doesn't look like a phone number." }, 400);
     const webhookUrl = b.webhookUrl || null;
     if (webhookUrl && !safeWebhookUrl(webhookUrl)) return c.json({ error: "The webhook needs to be a public https:// address, like a Slack incoming webhook." }, 400);
-    await store.setContact(c.get("hotel").id, { department, smsNumber, webhookUrl });
-    return c.json(await alertView(c.get("hotel").id));
+    const integrationUrl = b.integrationUrl === undefined ? undefined : b.integrationUrl || null;
+    if (integrationUrl && !safeWebhookUrl(integrationUrl)) return c.json({ error: "The system's address needs to be a public https:// URL." }, 400);
+    if ((integrationUrl || b.dispatch === "review") && (department === "manager" || department === "front_desk")) return c.json({ error: department === "manager" ? "The manager just gets alerts." : "The front desk is where requests are sent from, so it can't hold its own." }, 400);
+    const hotelId = c.get("hotel").id;
+    const had = (await store.contacts(hotelId)).find((x) => x.department === department);
+    await store.setContact(hotelId, { department, smsNumber, webhookUrl, dispatch: b.dispatch, integrationUrl, integrationSecret: integrationUrl && !had?.integrationSecret ? newSecret() : undefined });
+    // The secret is shown once, when a system is first connected.
+    const fresh = integrationUrl && !had?.integrationSecret ? (await store.contacts(hotelId)).find((x) => x.department === department)?.integrationSecret : null;
+    return c.json({ ...(await alertView(hotelId)), ...(fresh ? { secret: fresh } : {}) });
+  });
+  app.post("/api/alerts/:department/secret", async (c) => {
+    const department = alertKeys.find((d) => d === c.req.param("department"));
+    const hotelId = c.get("hotel").id;
+    const had = (await store.contacts(hotelId)).find((x) => x.department === department);
+    if (!department || !had?.integrationUrl) return c.json({ error: "Connect a system first." }, 400);
+    const secret = newSecret();
+    await store.setContact(hotelId, { ...had, integrationSecret: secret });
+    return c.json({ secret });
   });
   app.post("/api/alerts/:department/test", async (c) => {
     const department = alertKeys.find((d) => d === c.req.param("department"));
     if (!department) return c.json({ error: "No such department." }, 404);
     const hotel = c.get("hotel");
     const sent = await david.alerts.tell(hotel, department, `Test from David at ${hotel.name}: this is where ${department === "manager" ? "escalations and the morning briefing" : "new requests for this department"} will arrive.`);
-    return c.json({ sent });
+    const contact = (await store.contacts(hotel.id)).find((x) => x.department === department);
+    const system = contact?.integrationUrl ? await david.alerts.integrate(contact, { schema: "david.test.v1", test: true, department, hotel: hotel.name }, `david-test-${Date.now()}`) : null;
+    return c.json({ sent, system: system ? { ok: system.ok, error: system.error ?? null } : null });
   });
 
   // Team: who can see what. Managers and owners only.
@@ -480,6 +560,7 @@ export function createApp(deps: AppDeps) {
       const r = await david.handleInbound(c.get("hotel"), { from: b.phone, body: b.body, channel: b.channel, sid: `SMsim${Date.now()}${Math.random().toString(36).slice(2, 6)}` });
       return c.json({ guestId: r.guestId, reply: r.reply, requests: r.requests, escalated: r.escalated, source: r.source });
     });
+    app.get("/api/demo/pos", (c) => c.json({ tables: deps.pos?.tables ?? [], bookings: deps.pos?.bookings ?? [] }));
     app.post("/api/demo/tick", async (c) => c.json(await david.runTick(c.get("hotel").id)));
     app.post("/api/demo/clock", async (c) => {
       const b = z.object({ advanceHours: z.number().min(-24 * 400).max(24 * 400).optional(), reset: z.boolean().optional() }).parse(await c.req.json());

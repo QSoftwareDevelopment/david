@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { arrivalsOn, etaWords, isLateEta } from "./arrivals.js";
 import { DEPARTMENT_LABEL, departmentOf, type Department } from "./departments.js";
 import { reminderPlan } from "./promises.js";
@@ -67,6 +68,28 @@ export class Alerts {
     return sent;
   }
 
+  /**
+   * Post a structured payload to a department's own system (a restaurant's booking or POS software).
+   * Signed so the receiver can trust it: `X-David-Signature: t=<unix seconds>,v1=<hmac-sha256 of "t.body">`.
+   */
+  async integrate(contact: { integrationUrl: string | null; integrationSecret: string | null }, payload: unknown, idempotencyKey: string): Promise<{ ok: boolean; status: number | null; error?: string }> {
+    if (!contact.integrationUrl) return { ok: false, status: null, error: "No system connected." };
+    if (!safeWebhookUrl(contact.integrationUrl)) return { ok: false, status: null, error: "That address isn't a public https URL." };
+    const body = JSON.stringify(payload);
+    const t = Math.floor(this.clock().getTime() / 1000);
+    const sig = createHmac("sha256", contact.integrationSecret ?? "").update(`${t}.${body}`).digest("hex");
+    try {
+      const res = await this.fetchImpl(contact.integrationUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-david-signature": `t=${t},v1=${sig}`, "idempotency-key": idempotencyKey },
+        body, signal: AbortSignal.timeout(8000),
+      });
+      return res.ok ? { ok: true, status: res.status } : { ok: false, status: res.status, error: `Their system answered ${res.status}.` };
+    } catch (e) {
+      return { ok: false, status: null, error: e instanceof Error ? e.message : "Could not reach their system." };
+    }
+  }
+
   private line(r: GuestRequest, guestName: string, room: string | null, prefix = ""): string {
     const what = r.summary.replace(CATEGORY_PREFIX, "");
     return `${prefix}${r.priority === "urgent" ? "URGENT " : ""}${DEPARTMENT_LABEL[departmentOf(r.kind)]}${room ? ` · Room ${room}` : ""} · ${guestName}: ${what}`;
@@ -76,7 +99,9 @@ export class Alerts {
   async newRequest(hotel: Hotel, r: GuestRequest, guestName: string, room: string | null): Promise<void> {
     try {
       const text = this.line(r, guestName, room);
-      await this.tell(hotel, departmentOf(r.kind), text);
+      // A department set to "review" hears about it from the front desk, once it has been sent on.
+      if (r.dispatchedAt === null) await this.tell(hotel, "front_desk", `To send to ${DEPARTMENT_LABEL[departmentOf(r.kind)]}: ${text}`);
+      else await this.tell(hotel, departmentOf(r.kind), text);
       if (r.priority === "urgent" || r.details.escalation) await this.tell(hotel, "manager", text);
       await this.store.markRequest(r.id, "notified_at", this.clock());
     } catch (e) {
@@ -102,13 +127,14 @@ export class Alerts {
       if (age > 24 * 60) continue; // too old to be news
       const plan = reminderPlan(r.kind, r.priority === "urgent");
       const mins = Math.round(age);
+      const held = r.dispatchedAt === null;
       if (age >= plan.escalateAfter && !r.escalatedAt) {
-        await this.tell(hotel, "manager", this.line(r, r.guestName, r.room, `Nobody has picked this up in ${mins} min. `));
+        await this.tell(hotel, "manager", this.line(r, r.guestName, r.room, held ? `Still waiting at the front desk after ${mins} min. ` : `Nobody has picked this up in ${mins} min. `));
         await this.store.markRequest(r.id, "escalated_at", now);
         if (!r.remindedAt) await this.store.markRequest(r.id, "reminded_at", now);
         out.escalated++;
       } else if (age >= plan.remindAfter && !r.remindedAt && !r.escalatedAt) {
-        await this.tell(hotel, departmentOf(r.kind), this.line(r, r.guestName, r.room, `Still open after ${mins} min. `));
+        await this.tell(hotel, held ? "front_desk" : departmentOf(r.kind), this.line(r, r.guestName, r.room, held ? `Waiting to be sent to ${DEPARTMENT_LABEL[departmentOf(r.kind)]} (${mins} min). ` : `Still open after ${mins} min. `));
         await this.store.markRequest(r.id, "reminded_at", now);
         out.reminded++;
       }

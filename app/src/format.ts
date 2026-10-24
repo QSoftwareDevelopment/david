@@ -60,6 +60,7 @@ export const REQUEST_LABEL: Record<string, string> = {
 
 export const DEPARTMENTS = ['front_desk', 'room_service', 'restaurant', 'housekeeping', 'laundry', 'maintenance'] as const;
 export type Department = (typeof DEPARTMENTS)[number];
+export const DEPARTMENT_OF_KIND: Record<string, Department> = { room_service: 'room_service', restaurant: 'restaurant', housekeeping: 'housekeeping', amenities: 'housekeeping', laundry: 'laundry', maintenance: 'maintenance', transport: 'front_desk', late_checkout: 'front_desk', early_checkin: 'front_desk', other: 'front_desk' };
 export const DEPARTMENT_LABEL: Record<Department, string> = {
   front_desk: 'Front desk',
   room_service: 'Room service',

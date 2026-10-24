@@ -4,7 +4,7 @@ import { merge } from "./memory.js";
 import { DEPARTMENTS, DEPARTMENT_LABEL, departmentOf, kindsOf, type Access, type Department, type Role } from "./departments.js";
 import type { SquareCredentials, SquareMenuItem } from "./square.js";
 import type {
-  Campaign, CampaignAudience, CampaignKind, Consent, Guest, GuestRequest, Hotel, Memory, Message, MessageAuthor,
+  Campaign, CampaignAudience, CampaignKind, Confirmation, Consent, Guest, GuestRequest, Hotel, Memory, Message, MessageAuthor,
   RequestKind, RequestStatus, Service, ServiceCategory, Stay, StayStatus,
 } from "./types.js";
 
@@ -37,6 +37,8 @@ const requestOf = (r: Row): GuestRequest => ({
   details: (r.details ?? {}) as Record<string, unknown>, status: r.status, priority: r.priority, createdBy: r.created_by,
   createdAt: iso(r.created_at), updatedAt: iso(r.updated_at), completedAt: r.completed_at ? iso(r.completed_at) : null,
   squareOrderId: r.square_order_id ?? null, squareError: r.square_error ?? null,
+  dispatchedAt: r.dispatched_at ? iso(r.dispatched_at) : null, dispatchedBy: r.dispatched_by ?? null, dispatchNote: r.dispatch_note ?? null,
+  confirmation: (r.confirmation ?? null) as GuestRequest["confirmation"],
   notifiedAt: r.notified_at ? iso(r.notified_at) : null, remindedAt: r.reminded_at ? iso(r.reminded_at) : null, escalatedAt: r.escalated_at ? iso(r.escalated_at) : null,
 });
 const messageOf = (r: Row): Message => ({
@@ -57,7 +59,17 @@ export interface Contact {
   department: Department | "manager";
   smsNumber: string | null;
   webhookUrl: string | null;
+  /** "review": requests wait at the front desk until it sends them on. */
+  dispatch: "direct" | "review";
+  /** A reservation or POS system's own address, for a structured post. */
+  integrationUrl: string | null;
+  /** Signs what David sends, and is what the system presents when it calls back. Never leaves the server. */
+  integrationSecret: string | null;
 }
+const contactOf = (r: Row): Contact => ({
+  department: r.department as Contact["department"], smsNumber: (r.sms_number as string | null) ?? null, webhookUrl: (r.webhook_url as string | null) ?? null,
+  dispatch: r.dispatch === "review" ? "review" : "direct", integrationUrl: (r.integration_url as string | null) ?? null, integrationSecret: (r.integration_secret as string | null) ?? null,
+});
 
 export class Store {
   constructor(readonly db: Db) {}
@@ -121,17 +133,50 @@ export class Store {
 
   // ── Alerts: where each department hears about things ─────
   async contacts(hotelId: string): Promise<Contact[]> {
-    const { rows } = await this.db.query("select department, sms_number, webhook_url from department_contacts where hotel_id = $1", [hotelId]);
-    return rows.map((r) => ({ department: r.department as Contact["department"], smsNumber: (r.sms_number as string | null) ?? null, webhookUrl: (r.webhook_url as string | null) ?? null }));
+    const { rows } = await this.db.query("select department, sms_number, webhook_url, dispatch, integration_url, integration_secret from department_contacts where hotel_id = $1", [hotelId]);
+    return rows.map(contactOf);
   }
-  async setContact(hotelId: string, c: Contact): Promise<void> {
-    if (!c.smsNumber && !c.webhookUrl) {
+  /** Which hotel and department a reservation system is speaking for, from the secret it was given. */
+  async contactBySecret(secret: string): Promise<(Contact & { hotelId: string }) | null> {
+    const { rows } = await this.db.query("select hotel_id, department, sms_number, webhook_url, dispatch, integration_url, integration_secret from department_contacts where integration_secret = $1", [secret]);
+    return rows[0] ? { ...contactOf(rows[0]), hotelId: rows[0].hotel_id as string } : null;
+  }
+  /** Save a department's contact. The secret is kept unless the integration is removed. */
+  async setContact(hotelId: string, input: Pick<Contact, "department" | "smsNumber" | "webhookUrl"> & Partial<Pick<Contact, "dispatch" | "integrationUrl" | "integrationSecret">>): Promise<void> {
+    const existing = (await this.contacts(hotelId)).find((x) => x.department === input.department);
+    // What isn't mentioned stays as it was.
+    const c = { ...input, dispatch: input.dispatch ?? existing?.dispatch ?? "direct", integrationUrl: input.integrationUrl === undefined ? existing?.integrationUrl ?? null : input.integrationUrl };
+    const secret = c.integrationUrl ? (input.integrationSecret ?? existing?.integrationSecret ?? null) : null;
+    if (!c.smsNumber && !c.webhookUrl && !c.integrationUrl && c.dispatch === "direct") {
       await this.db.query("delete from department_contacts where hotel_id = $1 and department = $2", [hotelId, c.department]);
       return;
     }
     await this.db.query(
-      "insert into department_contacts (hotel_id, department, sms_number, webhook_url) values ($1,$2,$3,$4) on conflict (hotel_id, department) do update set sms_number = $3, webhook_url = $4",
-      [hotelId, c.department, c.smsNumber, c.webhookUrl]);
+      `insert into department_contacts (hotel_id, department, sms_number, webhook_url, dispatch, integration_url, integration_secret) values ($1,$2,$3,$4,$5,$6,$7)
+       on conflict (hotel_id, department) do update set sms_number = $3, webhook_url = $4, dispatch = $5, integration_url = $6, integration_secret = $7`,
+      [hotelId, c.department, c.smsNumber, c.webhookUrl, c.dispatch, c.integrationUrl, secret]);
+  }
+  async markDispatched(id: string, by: string, note: string | null, at: Date): Promise<GuestRequest | null> {
+    const { rows } = await this.db.query("update requests set dispatched_at = $2::timestamptz, dispatched_by = $3, dispatch_note = $4, reminded_at = null, escalated_at = null where id = $1 returning *", [id, at.toISOString(), by, note]);
+    return rows[0] ? requestOf(rows[0]) : null;
+  }
+  async setConfirmation(id: string, c: Confirmation): Promise<GuestRequest | null> {
+    const { rows } = await this.db.query("update requests set confirmation = $2::jsonb, updated_at = now() where id = $1 returning *", [id, JSON.stringify(c)]);
+    return rows[0] ? requestOf(rows[0]) : null;
+  }
+  /** Requests waiting at the front desk to be sent on. */
+  async heldRequests(hotelId: string) {
+    const { rows } = await this.db.query(
+      `select r.*, g.first_name, g.last_name, g.phone, s.room from requests r join guests g on g.id = r.guest_id left join stays s on s.id = r.stay_id
+        where r.hotel_id = $1 and r.dispatched_at is null and r.status in ('new','in_progress') order by r.created_at`, [hotelId]);
+    return rows.map((r) => ({ ...requestOf(r), guestName: [r.first_name, r.last_name].filter(Boolean).join(" ") || (r.phone as string), room: (r.room as string | null) ?? null }));
+  }
+  /** A department set to "review" holds its requests at the front desk. Urgent ones never wait. */
+  private async isHeld(hotelId: string, kind: RequestKind, priority: string): Promise<boolean> {
+    const dept = departmentOf(kind);
+    if (dept === "front_desk" || priority === "urgent") return false;
+    const { rows } = await this.db.query("select dispatch from department_contacts where hotel_id = $1 and department = $2", [hotelId, dept]);
+    return rows[0]?.dispatch === "review";
   }
   async markRequest(id: string, field: "notified_at" | "reminded_at" | "escalated_at", at: Date): Promise<void> {
     await this.db.query(`update requests set ${field} = $2::timestamptz where id = $1`, [id, at.toISOString()]);
@@ -211,15 +256,21 @@ export class Store {
   /** The main window: for each department, what is waiting and for how long. */
   async departmentBoard(hotelId: string, today: string, now: Date) {
     const { rows } = await this.db.query(
-      `select kind, status, priority, created_at, completed_at from requests
+      `select kind, status, priority, created_at, completed_at, dispatched_at from requests
         where hotel_id = $1 and (status in ('new','in_progress') or (status = 'done' and completed_at >= $2::date))`, [hotelId, today]);
     return DEPARTMENTS.map((d) => {
       const mine = rows.filter((r) => departmentOf(r.kind as RequestKind) === d);
       const open = mine.filter((r) => r.status === "new" || r.status === "in_progress");
-      const oldest = open.reduce<number | null>((o, r) => { const t = new Date(r.created_at as string).getTime(); return o === null || t < o ? t : o; }, null);
+      const age = (rs: typeof open) => {
+        const oldest = rs.reduce<number | null>((o, r) => { const t = new Date(r.created_at as string).getTime(); return o === null || t < o ? t : o; }, null);
+        return oldest === null ? null : Math.max(0, Math.round((now.getTime() - oldest) / 60_000));
+      };
+      const held = open.filter((r) => !r.dispatched_at);
       return {
         department: d, label: DEPARTMENT_LABEL[d], open: open.length, urgent: open.filter((r) => r.priority === "urgent").length,
-        doneToday: mine.filter((r) => r.status === "done").length, oldestMinutes: oldest === null ? null : Math.max(0, Math.round((now.getTime() - oldest) / 60_000)),
+        doneToday: mine.filter((r) => r.status === "done").length, oldestMinutes: age(open),
+        /** Waiting at the front desk to be sent on, and how long the department itself has been waiting. */
+        held: held.length, oldestSentMinutes: age(open.filter((r) => r.dispatched_at)),
       };
     });
   }
@@ -356,21 +407,22 @@ export class Store {
 
   // ── Requests ─────────────────────────────────────────────
   async createRequest(input: { hotelId: string; guestId: string; stayId: string | null; kind: RequestKind; summary: string; details?: Record<string, unknown>; priority?: "normal" | "urgent"; createdBy?: "david" | "staff"; at?: Date }): Promise<GuestRequest> {
+    const held = await this.isHeld(input.hotelId, input.kind, input.priority ?? "normal");
     const { rows } = await this.db.query(
-      "insert into requests (hotel_id, guest_id, stay_id, kind, summary, details, priority, created_by, created_at, updated_at) values ($1,$2,$3,$4,$5,$6,coalesce($7,'normal'),coalesce($8,'david'),coalesce($9, now()),coalesce($9, now())) returning *",
-      [input.hotelId, input.guestId, input.stayId, input.kind, input.summary.slice(0, 300), JSON.stringify(input.details ?? {}), input.priority ?? null, input.createdBy ?? null, input.at?.toISOString() ?? null]);
+      "insert into requests (hotel_id, guest_id, stay_id, kind, summary, details, priority, created_by, created_at, updated_at, dispatched_at) values ($1,$2,$3,$4,$5,$6,coalesce($7,'normal'),coalesce($8,'david'),coalesce($9, now()),coalesce($9, now()), case when $10::boolean then null else coalesce($9, now()) end) returning *",
+      [input.hotelId, input.guestId, input.stayId, input.kind, input.summary.slice(0, 300), JSON.stringify(input.details ?? {}), input.priority ?? null, input.createdBy ?? null, input.at?.toISOString() ?? null, held]);
     return requestOf(rows[0]!);
   }
   async request(id: string): Promise<GuestRequest | null> {
     const { rows } = await this.db.query("select * from requests where id = $1", [id]);
     return rows[0] ? requestOf(rows[0]) : null;
   }
-  async listRequests(hotelId: string, opts: { status?: RequestStatus[]; kind?: RequestKind; kinds?: RequestKind[]; guestId?: string; limit?: number } = {}) {
+  async listRequests(hotelId: string, opts: { status?: RequestStatus[]; kind?: RequestKind; kinds?: RequestKind[]; guestId?: string; limit?: number; dispatchedOnly?: boolean; alsoHeld?: boolean } = {}) {
     const { rows } = await this.db.query(
       `select r.*, g.first_name, g.last_name, g.phone, s.room from requests r join guests g on g.id = r.guest_id left join stays s on s.id = r.stay_id
-        where r.hotel_id = $1 and ($2::text[] is null or r.status = any($2)) and ($3::text is null or r.kind = $3) and ($4::uuid is null or r.guest_id = $4) and ($6::text[] is null or r.kind = any($6))
+        where r.hotel_id = $1 and ($2::text[] is null or r.status = any($2)) and ($3::text is null or r.kind = $3) and ($4::uuid is null or r.guest_id = $4) and ($6::text[] is null or r.kind = any($6) or ($8::boolean and r.dispatched_at is null)) and (not $7::boolean or r.dispatched_at is not null)
         order by case r.status when 'new' then 0 when 'in_progress' then 1 else 2 end, (r.priority = 'urgent') desc, r.created_at desc limit $5`,
-      [hotelId, opts.status ?? null, opts.kind ?? null, opts.guestId ?? null, opts.limit ?? 200, opts.kinds ?? null]);
+      [hotelId, opts.status ?? null, opts.kind ?? null, opts.guestId ?? null, opts.limit ?? 200, opts.kinds ?? null, opts.dispatchedOnly ?? false, opts.alsoHeld ?? false]);
     return rows.map((r) => ({ ...requestOf(r), department: departmentOf(r.kind as RequestKind), guestName: [r.first_name, r.last_name].filter(Boolean).join(" ") || r.phone as string, room: (r.room as string | null) ?? null }));
   }
   async updateRequest(id: string, p: { status?: RequestStatus; priority?: "normal" | "urgent"; summary?: string }): Promise<GuestRequest | null> {

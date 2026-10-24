@@ -4,6 +4,7 @@ import { makeVerifier } from "./auth.js";
 import { migrate, pgDb, pgliteDb } from "./db.js";
 import { createApp } from "./http.js";
 import { seedDemo } from "./seed.js";
+import { DemoPos } from "./demopos.js";
 import { David } from "./service.js";
 import { RecordingSms, TwilioSms } from "./sms.js";
 import { HttpSquare, RecordingSquare } from "./square.js";
@@ -26,7 +27,14 @@ if (!demo && !env.TWILIO_ACCOUNT_SID) console.warn("No TWILIO_ACCOUNT_SID: texts
 
 // The demo has no real Square: it hands out a small menu and keeps the orders it is sent.
 const demoSquare = demo ? new RecordingSquare() : undefined;
-const david = new David(store, sms, chooseAgent(env), now, demoSquare ? () => demoSquare : (c) => new HttpSquare(c));
+// The demo also has a stand-in restaurant system that books a table when David sends it a reservation.
+let david: David;
+const pos = demo ? new DemoPos(async (requestId, c) => {
+  const request = await store.request(requestId);
+  const hotel = request ? await store.hotel(request.hotelId) : null;
+  if (request && hotel) await david.applyConfirmation(hotel, request, { status: "confirmed", table: c.table, time: c.time, note: null, source: "demo POS" });
+}) : undefined;
+david = new David(store, sms, chooseAgent(env), now, demoSquare ? () => demoSquare : (c) => new HttpSquare(c), pos?.fetch);
 if (demo) {
   const hotel = await seedDemo(store, now());
   console.log(`demo hotel ready: ${hotel.name}`);
@@ -39,7 +47,7 @@ const app = createApp({
   publicUrl: env.PUBLIC_URL,
   verify: makeVerifier(env),
   corsOrigins: env.CORS_ORIGINS?.split(",").map((s) => s.trim()).filter(Boolean),
-  recorder, clock,
+  recorder, clock, pos,
 });
 
 serve({ fetch: app.fetch, port }, () => console.log(`David is listening on :${port} (${demo ? "demo" : "live"}, agent: ${env.ANTHROPIC_API_KEY && env.DAVID_AGENT !== "rules" ? "claude" : "rules"})`));

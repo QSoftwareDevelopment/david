@@ -120,7 +120,33 @@ WhatsApp runs through the same Twilio account and the same webhook as SMS. Three
 A guest is one person across both apps: David replies on whichever they used last, and everything lands in one thread.
 Facebook Messenger and Instagram are separate Meta products and are not built.
 
-## 9. Before the first real guest
+## 9. Front desk dispatch and restaurant systems
+
+Run `supabase/migrations/0006_dispatch.sql`. In the app, More, Alerts, pick a department (say Restaurant):
+
+- **Front desk sends these on**: requests wait at the front desk until it presses Send. Urgent ones skip the wait. Without this switch, requests go straight to the department as before.
+- **System address**: the department's own reservation or POS software, if it can receive a webhook. David generates a secret when you save it (shown once).
+
+What David posts (HTTPS, JSON, `schema: "david.handoff.v1"`) to that address when the desk presses Send:
+`requestId`, `department`, `summary`, `requestedFor`, `originalMessage`, `frontDeskNote`, `guest` (name, phone, VIP, past stays),
+`stay` (room, dates, party size, arrival time), `dietary`, `onFile` (what we know that this department acts on), `usualOrders`, and
+`previousRequests` (date, summary, table, time). Headers: `X-David-Signature: t=<seconds>,v1=<hex>`, where `v1` is the HMAC-SHA256 of
+`"<t>.<raw body>"` with the secret, and `Idempotency-Key: david-<requestId>`. Verify the signature and reject old timestamps. If the system
+doesn't answer 2xx, nothing is marked sent and the desk can press Send again.
+
+To report back, their system posts `{ "requestId": "...", "status": "confirmed" | "declined" | "seated" | "done", "table": "T5", "time": "7:30 pm", "note": "..." }`
+to `https://YOUR-SERVER/webhooks/integrations/confirm` with `Authorization: Bearer <secret>`. A confirmation closes the request and texts the guest;
+a decline goes to the front desk, not the guest. A secret only works for its own department's requests.
+
+**What you can connect today.** I looked for open booking APIs and found that OpenTable, Resy, SevenRooms and Tock are partner-gated (approval,
+not self-serve), and I didn't find public write APIs for Toast's reservations. So David doesn't ship a connector for any of them. Anything that
+accepts a webhook works now: a restaurant's own software, or a Zapier/Make scenario that creates the booking in theirs. A direct connector
+to a specific vendor means applying to that vendor's partner program and mapping the payload above to their API. The demo's "Restaurant system"
+in the studio is a stand-in that books a table on a floor map and calls back, so you can see the whole loop.
+
+The payload includes the guest's phone number and what we know about them, and goes only to the address you configure. Use a system you trust.
+
+## 10. Before the first real guest
 
 - Add guests with **Guest agreed to receive texts** ticked only when they genuinely agreed at booking.
 - Fill in **Menu & services**: it is the only thing David will offer.
