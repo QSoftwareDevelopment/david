@@ -158,41 +158,51 @@ export const guests = [
 // ---- Connections (demo only: connecting here changes this page, not a real integration) ----
 const S_ = true;
 export const connections = [
-  { id: "opera", name: "Opera Cloud", cat: "Property management", desc: "Guest profiles, reservations, rooms and work orders. Opera stays the record.", status: "connected", last: "Streaming now", fields: [["Hostname", "https://harbour.example-opera.com"], ["Chain code", "HH"], ["Property code", "HARBOUR"], ["App key", "", S_], ["Client ID", ""], ["Client secret", "", S_]] },
-  { id: "square", name: "Square", cat: "Point of sale", desc: "Room service menu, prices and open orders, with the guest’s allergy on every line.", status: "connected", last: "Synced 10:05", fields: [["Access token", "", S_], ["Location ID", "L8K2…"]] },
-  { id: "toast", name: "Toast", cat: "Point of sale", desc: "Restaurant and bar menus, tables and orders, so David can answer and book from live data.", status: "available", last: "", fields: [["Restaurant GUID", ""], ["Client ID", ""], ["Client secret", "", S_]] },
-  { id: "lightspeed", name: "Lightspeed", cat: "Point of sale", desc: "Menus and orders for outlets that run on Lightspeed.", status: "available", last: "", fields: [["Account ID", ""], ["API key", "", S_]] },
-  { id: "opentable", name: "OpenTable", cat: "Reservations", desc: "Check availability and book restaurant tables for guests.", status: "available", last: "", fields: [["Restaurant ID", ""], ["API key", "", S_]] },
-  { id: "sevenrooms", name: "SevenRooms", cat: "Reservations", desc: "Table bookings, waitlists and guest notes for your venues.", status: "available", last: "", fields: [["Venue ID", ""], ["API key", "", S_]] },
-  { id: "whatsapp", name: "WhatsApp Business", cat: "Messaging", desc: "Guests message you on WhatsApp. David replies within the 24-hour window.", chan: "wa", fields: [] },
-  { id: "messenger", name: "Messenger", cat: "Messaging", desc: "Guests message your Facebook page. David replies in the same thread.", chan: "ms", fields: [] },
-  { id: "apple", name: "Apple Messages for Business", cat: "Messaging", desc: "iMessage chats through an approved messaging provider.", chan: "im", fields: [] },
-  { id: "twilio", name: "SMS (Twilio)", cat: "Messaging", desc: "Texts to and from your hotel number, with consent and STOP handled.", chan: "sm", fields: [] },
-  { id: "slack", name: "Slack", cat: "Team alerts", desc: "Sends each request to the right department channel, and nudges the manager if it is missed.", status: "connected", last: "Synced 10:42", fields: [["Webhook URL", "https://hooks.slack.example/…", S_], ["Default channel", "#front-desk"]] },
-  { id: "zalo", name: "Zalo (ZNS)", cat: "Team alerts", desc: "Messages the assigned employee on their own Zalo number the moment a request is assigned, and lets them reply DONE.", status: "connected", last: "Delivered 10:41", fields: [["Official Account ID", "2847…"], ["App ID", "1234…"], ["App secret", "", S_], ["Access token", "", S_], ["Approved template ID", "ZNS-TASK-001"]] },
-  { id: "teams", name: "Microsoft Teams", cat: "Team alerts", desc: "Request alerts and the morning briefing in Teams channels.", status: "available", last: "", fields: [["Webhook URL", "", S_]] },
-  { id: "google", name: "Google Business Profile", cat: "Reviews", desc: "Sends happy guests to your review link and flags unhappy ones to the duty manager.", status: "attention", last: "Sign-in expired 2 days ago", fields: [["Account email", "frontdesk@harbourhouse.example"], ["Place ID", ""]] },
-  { id: "tripadvisor", name: "TripAdvisor", cat: "Reviews", desc: "Review links and listing details.", status: "available", last: "", fields: [["Location ID", ""]] },
-  { id: "claude", name: "Anthropic Claude", cat: "AI", desc: "Writes David’s replies, grounded in what he knows about your hotel.", status: "connected", last: "Healthy", fields: [["API key", "", S_], ["Model", "Claude"]] },
+  { id: "opera", group: "core", name: "Opera Cloud", cat: "Property management", desc: "Guest profiles, reservations, rooms and work orders. Opera stays the record.", status: "connected", last: "Streaming now", fields: [["Hostname", "https://harbour.example-opera.com"], ["Chain code", "HH"], ["Property code", "HARBOUR"], ["App key", "", S_], ["Client ID", ""], ["Client secret", "", S_]] },
+  { id: "square", group: "optional", name: "Square", cat: "Point of sale", desc: "Room service menu, prices and open orders, with the guest’s allergy on every line.", status: "connected", last: "Synced 10:05", fields: [["Access token", "", S_], ["Location ID", "L8K2…"]] },
+  { id: "toast", group: "optional", name: "Toast", cat: "Point of sale", desc: "Restaurant and bar menus, tables and orders, so David can answer and book from live data.", status: "available", last: "", fields: [["Restaurant GUID", ""], ["Client ID", ""], ["Client secret", "", S_]] },
+  { id: "lightspeed", group: "optional", name: "Lightspeed", cat: "Point of sale", desc: "Menus and orders for outlets that run on Lightspeed.", status: "available", last: "", fields: [["Account ID", ""], ["API key", "", S_]] },
+  { id: "opentable", group: "optional", name: "OpenTable", cat: "Reservations", desc: "Check availability and book restaurant tables for guests.", status: "available", last: "", fields: [["Restaurant ID", ""], ["API key", "", S_]] },
+  { id: "sevenrooms", group: "optional", name: "SevenRooms", cat: "Reservations", desc: "Table bookings, waitlists and guest notes for your venues.", status: "available", last: "", fields: [["Venue ID", ""], ["API key", "", S_]] },
+  { id: "whatsapp", group: "core", name: "WhatsApp Business", cat: "Messaging", desc: "Guests message you on WhatsApp. David replies within the 24-hour window.", chan: "wa", fields: [] },
+  { id: "messenger", group: "core", name: "Messenger", cat: "Messaging", desc: "Guests message your Facebook page. David replies in the same thread.", chan: "ms", fields: [] },
+  { id: "apple", group: "core", name: "Apple Messages for Business", cat: "Messaging", desc: "iMessage chats through an approved messaging provider.", chan: "im", fields: [] },
+  { id: "twilio", group: "core", name: "SMS (Twilio)", cat: "Messaging", desc: "Texts to and from your hotel number, with consent and STOP handled.", chan: "sm", fields: [] },
+  { id: "slack", group: "core", name: "Slack", cat: "Team alerts", desc: "Sends each request to the right department channel, and nudges the manager if it is missed.", status: "connected", last: "Synced 10:42", fields: [["Webhook URL", "https://hooks.slack.example/…", S_], ["Default channel", "#front-desk"]] },
+  { id: "zalo", group: "core", name: "Zalo (ZNS)", cat: "Team alerts", desc: "Messages the assigned employee on their own Zalo number the moment a request is assigned, and lets them reply DONE.", status: "connected", last: "Delivered 10:41", fields: [["Official Account ID", "2847…"], ["App ID", "1234…"], ["App secret", "", S_], ["Access token", "", S_], ["Approved template ID", "ZNS-TASK-001"]] },
+  { id: "teams", group: "optional", name: "Microsoft Teams", cat: "Team alerts", desc: "Request alerts and the morning briefing in Teams channels.", status: "available", last: "", fields: [["Webhook URL", "", S_]] },
+  { id: "google", group: "optional", name: "Google Business Profile", cat: "Reviews", desc: "Sends happy guests to your review link and flags unhappy ones to the duty manager.", status: "attention", last: "Sign-in expired 2 days ago", fields: [["Account email", "frontdesk@harbourhouse.example"], ["Place ID", ""]] },
+  { id: "tripadvisor", group: "optional", name: "TripAdvisor", cat: "Reviews", desc: "Review links and listing details.", status: "available", last: "", fields: [["Location ID", ""]] },
+  { id: "claude", group: "core", name: "Anthropic Claude", cat: "AI", desc: "Writes David’s replies, grounded in what he knows about your hotel.", status: "connected", last: "Healthy", fields: [["API key", "", S_], ["Model", "Claude"]] },
 ];
 
 // ---- Team: every employee has a profile with a Zalo number (fictional numbers) ----
 export const departments = ["Maintenance", "Housekeeping", "Room service", "Front desk", "Laundry", "Restaurant"];
 export const team = [
-  { id: "t1", name: "Maya Reyes", role: "Duty manager", dept: "Front desk", zalo: "+84905550101", lang: "English", consent: true, onShift: true },
-  { id: "t2", name: "Luis Pereira", role: "Maintenance engineer", dept: "Maintenance", zalo: "+84905550102", lang: "English", consent: true, onShift: true },
-  { id: "t3", name: "Dana Kowalski", role: "Housekeeping supervisor", dept: "Housekeeping", zalo: "+84905550103", lang: "English", consent: true, onShift: true },
-  { id: "t4", name: "Omar Haddad", role: "Front desk agent", dept: "Front desk", zalo: "+84905550104", lang: "English", consent: true, onShift: true },
-  { id: "t5", name: "Sofia Lindqvist", role: "Concierge", dept: "Front desk", zalo: "+84905550105", lang: "English", consent: true, onShift: true },
-  { id: "t6", name: "Ben Okafor", role: "Room service lead", dept: "Room service", zalo: "", lang: "English", consent: false, onShift: true },
-  { id: "t7", name: "Minh Tran", role: "Kitchen", dept: "Room service", zalo: "+84905550107", lang: "Vietnamese", consent: true, onShift: true },
-  { id: "t8", name: "Linh Nguyen", role: "Laundry attendant", dept: "Laundry", zalo: "+84905550108", lang: "Vietnamese", consent: true, onShift: true },
-  { id: "t9", name: "An Pham", role: "Restaurant host", dept: "Restaurant", zalo: "+84905550109", lang: "Vietnamese", consent: true, onShift: false },
+  { id: "t1", group: "optional", name: "Maya Reyes", role: "Duty manager", dept: "Front desk", zalo: "+84905550101", lang: "English", consent: true, onShift: true },
+  { id: "t2", group: "optional", name: "Luis Pereira", role: "Maintenance engineer", dept: "Maintenance", zalo: "+84905550102", lang: "English", consent: true, onShift: true },
+  { id: "t3", group: "optional", name: "Dana Kowalski", role: "Housekeeping supervisor", dept: "Housekeeping", zalo: "+84905550103", lang: "English", consent: true, onShift: true },
+  { id: "t4", group: "optional", name: "Omar Haddad", role: "Front desk agent", dept: "Front desk", zalo: "+84905550104", lang: "English", consent: true, onShift: true },
+  { id: "t5", group: "optional", name: "Sofia Lindqvist", role: "Concierge", dept: "Front desk", zalo: "+84905550105", lang: "English", consent: true, onShift: true },
+  { id: "t6", group: "optional", name: "Ben Okafor", role: "Room service lead", dept: "Room service", zalo: "", lang: "English", consent: false, onShift: true },
+  { id: "t7", group: "optional", name: "Minh Tran", role: "Kitchen", dept: "Room service", zalo: "+84905550107", lang: "Vietnamese", consent: true, onShift: true },
+  { id: "t8", group: "optional", name: "Linh Nguyen", role: "Laundry attendant", dept: "Laundry", zalo: "+84905550108", lang: "Vietnamese", consent: true, onShift: true },
+  { id: "t9", group: "optional", name: "An Pham", role: "Restaurant host", dept: "Restaurant", zalo: "+84905550109", lang: "Vietnamese", consent: true, onShift: false },
 ];
 export const autoAssignDefault = { Maintenance: "t2", Housekeeping: "t3", "Room service": "t7", "Front desk": "t4", Laundry: "t8", Restaurant: "t9" };
 export const zaloLogSeed = [
-  { id: "z3", time: "10:41", to: "Linh Nguyen", phone: "+84905550108", req: "r5", text: "Task for Linh: Laundry, room 517. Pickup for four shirts (guest: Wei Chen). Reply DONE when finished.", status: "delivered", reason: "", kind: "assignment" },
-  { id: "z2", time: "10:40", to: "Dana Kowalski", phone: "+84905550103", req: "r4", text: "Task for Dana: Housekeeping, room 221. Two extra pillows, hypoallergenic (guest: Ana Souza). Reply DONE when finished.", status: "delivered", reason: "", kind: "assignment" },
-  { id: "z1", time: "10:42", to: "Luis Pereira", phone: "+84905550102", req: "r1", text: "Task for Luis: Maintenance, room 608. Air conditioning not cooling (guest: Marcus Bell). Reply DONE when finished.", status: "delivered", reason: "", kind: "assignment" },
+  { id: "z3", group: "optional", time: "10:41", to: "Linh Nguyen", phone: "+84905550108", req: "r5", text: "Task for Linh: Laundry, room 517. Pickup for four shirts (guest: Wei Chen). Reply DONE when finished.", status: "delivered", reason: "", kind: "assignment" },
+  { id: "z2", group: "optional", time: "10:40", to: "Dana Kowalski", phone: "+84905550103", req: "r4", text: "Task for Dana: Housekeeping, room 221. Two extra pillows, hypoallergenic (guest: Ana Souza). Reply DONE when finished.", status: "delivered", reason: "", kind: "assignment" },
+  { id: "z1", group: "optional", time: "10:42", to: "Luis Pereira", phone: "+84905550102", req: "r1", text: "Task for Luis: Maintenance, room 608. Air conditioning not cooling (guest: Marcus Bell). Reply DONE when finished.", status: "delivered", reason: "", kind: "assignment" },
 ];
-export const apiKeysSeed = [{ id: "key1", name: "Front desk automation", secret: "dvd_live_7f3a91c2e84b5d06a1f9", created: "12 Oct", last: "Today 10:40" }];
+export const apiKeysSeed = [{ id: "key1", group: "optional", name: "Front desk automation", secret: "dvd_live_7f3a91c2e84b5d06a1f9", created: "12 Oct", last: "Today 10:40" }];
+
+// What reaches David through Opera, so it needs no separate connection.
+export const viaOpera = [
+  ["Guest profiles and preferences", "Two-way", "David reads them and proposes new preferences back for approval"],
+  ["Reservations and stays", "Read", "Arrivals, departures, room type, rate and stay dates"],
+  ["Rooms and housekeeping status", "Read", "Which rooms are ready, occupied or being cleaned"],
+  ["Work orders", "Write", "Maintenance and housekeeping requests David logs"],
+  ["Room charges", "Write", "Room service and extras post to the guest’s folio through your POS interface"],
+  ["Rates and room types", "Read", "What David quotes when a guest asks about a room"],
+];

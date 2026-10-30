@@ -32,7 +32,7 @@ const S = {
   chans: D.channels.map((c) => ({ ...c, on: true })), knowledge: D.knowledge.map((k) => ({ ...k })),
   conns: D.connections.map((c) => ({ id: c.id, status: c.status, last: c.last })),
   guests: D.guests.map((g) => ({ id: g.id, fields: g.fields.map((x) => ({ ...x })) })),
-  guest: "g-elena", fieldsOpen: false, guestQ: "", guestF: "all", connCat: "All", qa: [], edit: null,
+  guest: "g-elena", fieldsOpen: false, guestQ: "", guestF: "all", connCat: "All", showOpt: false, qa: [], edit: null,
   team: D.team.map((t) => ({ ...t })), autoAssign: { ...D.autoAssignDefault }, zaloOn: true, zaloLog: D.zaloLogSeed.map((z) => ({ ...z })), apiKeys: D.apiKeysSeed.map((k) => ({ ...k })), zaloTab: "people", newKey: null, tellGuest: true,
   guestTpl: { assign: "Hi {guest}, {staff} from {dept} is on this now. I’ll let you know as soon as it’s done.", done: "Hi {guest}, {staff} has taken care of it: {request}. If anything is not right, just tell me." },
   api: { preset: 0, method: "POST", path: "/v1/requests", key: D.apiKeysSeed[0].secret, body: "", res: null },
@@ -238,16 +238,20 @@ function connState(c) {
   return S.conns.find((x) => x.id === c.id);
 }
 function brain() {
-  const cats = ["All", ...new Set(D.connections.map((c) => c.cat))], st = D.connections.map(connState);
+  const pool = D.connections.filter((c) => c.group === "core" || S.showOpt), optN = D.connections.filter((c) => c.group === "optional").length;
+  const cats = ["All", ...new Set(pool.map((c) => c.cat))], st = D.connections.map(connState);
+  if (!cats.includes(S.connCat)) S.connCat = "All";
   const n = (s) => st.filter((x) => x.status === s).length;
-  const list = D.connections.filter((c) => S.connCat === "All" || c.cat === S.connCat);
+  const list = pool.filter((c) => S.connCat === "All" || c.cat === S.connCat);
   const card = (c) => {
     const s = connState(c), pl = { connected: pill("ok", "Connected"), available: '<span class="pill none">Not connected</span>', attention: pill("review", "Needs attention"), paused: pill("pend", "David paused") }[s.status];
     const btn = c.chan ? `<a class="btn sm" href="#/channels">Open channels</a>` : `<button class="btn sm ${s.status === "available" ? "primary" : ""}" data-a="editConn" data-id="${c.id}">${{ connected: "Manage", available: "Connect", attention: "Fix" }[s.status]}</button>`;
     return `<div class="conn ${s.status === "attention" ? "attention" : ""}"><div><span class="label">${c.cat}</span><h2 style="margin-top:2px">${esc(c.name)}</h2></div><p class="small" style="min-height:54px;color:var(--ink)">${esc(c.desc)}</p><div class="small mono">${esc(s.last || "Not set up")}</div><div class="foot">${pl}${btn}</div></div>`;
   };
-  return `<div class="card"><div class="hd"><div><h2>Connections</h2><div class="small sub">${n("connected") + n("paused")} connected · ${n("available")} available · ${n("attention")} need attention. Demo only: connecting here changes this page, not a real system.</div></div></div>
-  <div class="cats">${cats.map((k) => `<button class="btn sm ${S.connCat === k ? "primary" : ""}" style="border-radius:999px" data-a="connCat" data-v="${k}">${k}</button>`).join("")}</div><div class="conns">${list.map(card).join("")}</div></div>
+  return `<div class="card"><div class="hd"><div><h2>Connections</h2><div class="small sub">Opera is the hotel’s system of record, so most of what David knows comes through it. These are the other things he connects to. Demo only: connecting here changes this page, not a real system.</div></div></div>
+  <div class="bd" style="padding-bottom:16px"><div class="note"><span class="label" style="color:var(--green)">Comes through Opera, no separate connection</span><div class="row" style="grid-template-columns:repeat(3,1fr);gap:12px 24px;margin-top:6px">${D.viaOpera.map(([a, dir, d]) => `<div><div style="display:flex;gap:8px;align-items:center"><span>${a}</span><span class="chip im">${dir}</span></div><div class="small" style="color:var(--ink)">${d}</div></div>`).join("")}</div><span class="small">What Opera can share depends on the modules your property uses and what Oracle has enabled for it. Check this with your Opera administrator.</span></div></div>
+  <div class="cats">${cats.map((k) => `<button class="btn sm ${S.connCat === k ? "primary" : ""}" style="border-radius:999px" data-a="connCat" data-v="${k}">${k}</button>`).join("")}</div><div class="conns">${list.map(card).join("")}</div>
+  <div style="padding:0 20px 20px;display:flex;gap:12px;align-items:center"><button class="btn sm" data-a="showOpt">${S.showOpt ? "Hide" : "Show"} ${optN} optional connections</button><span class="small">Only needed if you want David to read menus, book tables or post reviews outside Opera. ${n("connected") + n("paused")} connected · ${n("attention")} need attention.</span></div></div>
   ${teamCard()}
   <div class="row" style="grid-template-columns:1fr 460px">
   <div class="card"><div class="hd"><div><h2>What David knows</h2><div class="small sub">He answers only from these. If it isn’t here, he says so and asks a person.</div></div><button class="btn primary" data-a="newKnow">+ Add knowledge</button></div><div class="list">${S.knowledge.map((k) => `<div style="align-items:center"><span class="avatar" style="border-radius:8px">${icon("check").replace("<svg", '<svg width="18" height="18" fill="none" stroke="#1D4A3F" stroke-width="1.8" stroke-linecap="round"')}</span><div class="grow"><div>${esc(k.name)}</div><div class="small">${esc(k.detail)}</div></div><div style="text-align:right">${pill(k.st, k.src)}<div class="small" style="margin-top:3px">${esc(k.when)}</div></div><button class="btn sm" data-a="editKnow" data-id="${k.id}">Edit</button></div>`).join("")}</div></div>
@@ -378,6 +382,7 @@ const A = {
   resolve: (t) => { S.conflict = t.dataset.v; S.events.unshift([now(), "→", "PROFILE UPDATE", "Bell · mobile resolved", "ok", "Queued"]); toast(t.dataset.v); },
   /* brain */
   connCat: (t) => (S.connCat = t.dataset.v),
+  showOpt: () => (S.showOpt = !S.showOpt),
   editConn: (t) => { const c = D.connections.find((x) => x.id === t.dataset.id), data = {}; c.fields.forEach(([l, ph, secret], i) => { if (!secret && ph && S.conns.find((x) => x.id === c.id).status === "connected") data["f" + i] = ph; }); S.edit = { type: "conn", id: c.id, data, test: null }; },
   testConn: () => { const e = S.edit, c = D.connections.find((x) => x.id === e.id); e.test = "running"; setTimeout(() => { if (S.edit === e) { const st = S.conns.find((x) => x.id === e.id).status === "connected"; e.test = c.fields.every((_, i) => String(e.data["f" + i] || "").trim()) || st ? "ok" : "fail"; drawer(); } }, 900); },
   saveConn: () => { const e = S.edit, c = D.connections.find((x) => x.id === e.id), st = S.conns.find((x) => x.id === e.id); const filled = c.fields.every((_, i) => String(e.data["f" + i] || "").trim()); if (st.status !== "connected" && !filled) { e.test = "fail"; return; } st.status = "connected"; st.last = "Just connected"; S.edit = null; toast(`${c.name} connected (demo)`); },
