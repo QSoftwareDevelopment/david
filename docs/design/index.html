@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>David — laptop console design</title>
+<style>
+  :root { --linen:#F3EFE6; --ink:#17201C; --mute:#666B63; --rule:#E2DCCD; --green:#1D4A3F; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--linen); color:var(--ink); font-family: Helvetica, Arimo, Arial, sans-serif; line-height:1.45; }
+  header { max-width:1200px; margin:0 auto; padding:48px 32px 8px; }
+  h1 { font-size:34px; letter-spacing:-0.02em; margin:0 0 8px; }
+  p.lede { color:var(--mute); max-width:720px; margin:0; }
+  nav { position:sticky; top:0; background:var(--linen); border-bottom:1px solid var(--rule); z-index:2; }
+  nav div { max-width:1200px; margin:0 auto; padding:12px 32px; display:flex; flex-wrap:wrap; gap:8px; }
+  nav a { font-size:13px; color:var(--ink); text-decoration:none; padding:5px 11px; border:1px solid var(--rule); border-radius:999px; background:#fff; }
+  nav a:hover { background:var(--green); color:#fff; border-color:var(--green); }
+  main { max-width:1200px; margin:0 auto; padding:24px 32px 80px; display:grid; gap:48px; }
+  figure { margin:0; }
+  figcaption { display:flex; align-items:baseline; gap:12px; margin-bottom:12px; }
+  figcaption b { font-size:18px; }
+  figcaption span { font-size:12px; color:var(--mute); letter-spacing:.08em; }
+  img { width:100%; height:auto; display:block; border:1px solid var(--rule); border-radius:12px; background:#fff; box-shadow:0 1px 2px rgba(23,32,28,.08), 0 8px 24px rgba(23,32,28,.06); }
+  footer { max-width:1200px; margin:0 auto; padding:0 32px 64px; color:var(--mute); font-size:13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>David, laptop console</h1>
+  <p class="lede">Staff console for the hotel concierge, built to sit on top of Opera. Laptop only. All guests, rooms and numbers are placeholders for a fictional hotel, The Harbour House.</p>
+</header>
+<nav><div id="toc"></div></nav>
+<main id="screens"></main>
+<footer>Designed in Framer: <a href="https://framer.com/projects/H047xDmCsAQDYfoXrWBV">David — Laptop Console</a>. Images are 1440×900 captures of the Framer canvas. The typeface is Arimo, standing in for Helvetica.</footer>
+<script>
+  const screens = [
+    ["01-today", "Today", "Stats, request queue, arrivals from Opera, messages this week"],
+    ["02-inbox", "Inbox", "Every channel in one thread, with the Opera guest profile beside it"],
+    ["03-guest-opera", "Guest: Opera and David", "Field by field, which system knows what, and what is awaiting approval"],
+    ["04-opera-sync", "Opera sync", "Connection, live event log in both directions, and a conflict to decide"],
+    ["05-how-it-fits", "How David sits on Opera", "Opera is the record, David is the conversation on top"],
+    ["06-requests", "Requests", "Everything routed to departments"],
+    ["07-campaigns", "Campaigns", "Texts David sends first, and the rules he holds"],
+    ["08-channels", "Channels", "WhatsApp, Messenger, iMessage and SMS, with each platform’s rule"],
+    ["09-davids-brain", "David’s brain", "What he knows about the hotel, and a test that shows he won’t invent answers"],
+    ["10-marketplace-1", "Marketplace picks, restyled", "Free Framer Marketplace components trialled for the console"],
+    ["11-marketplace-2", "More marketplace components", "Nineteen more, at default settings"],
+  ];
+  const toc = document.getElementById("toc"), main = document.getElementById("screens");
+  screens.forEach(([f, t, d], i) => {
+    toc.insertAdjacentHTML("beforeend", `<a href="#${f}">${t}</a>`);
+    main.insertAdjacentHTML("beforeend", `<figure id="${f}"><figcaption><b>${t}</b><span>${d}</span></figcaption><img src="screens/${f}.jpg" alt="${t}" loading="${i < 2 ? "eager" : "lazy"}"></figure>`);
+  });
+</script>
+</body>
+</html>
