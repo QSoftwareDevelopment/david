@@ -13,6 +13,7 @@ cd docs/design && python3 -m http.server 8123   # then open http://localhost:812
 
 | File | Screen |
 |---|---|
+| `12-dashboard` | Dashboard: every free Marketplace component that installed, filled with sample data |
 | `01-today` | Today: stats, request queue, arrivals read from Opera |
 | `02-inbox` | Inbox: all channels in one thread, Opera guest profile beside it |
 | `03-guest-opera` | Guest: field-by-field Opera and David, with approval state |
@@ -36,3 +37,7 @@ cd docs/design && python3 -m http.server 8123   # then open http://localhost:812
 - These are images, not code. Framer canvases cannot be exported as components from this workflow; the Expo staff app in `app/` is unchanged and still phone-first.
 - Typeface is Arimo, standing in for Helvetica (Framer has no loadable Helvetica). Swap in a licensed Helvetica Neue by uploading it as a custom font in Framer.
 - Opera integration details, such as OAuth and app key, property codes and the event stream, come from Oracle's public integration docs. Access is enabled per hotel by Oracle and needs confirming before any delivery date is promised.
+
+## Marketplace components
+
+Used in the dashboard: KPI Stat Cards, Bar Chart Diagram, Simple SVG Chart, ChartJS, Progress Bar Chart, Smart Toggle Switch, Smooth Toggle Switch, Segment Control, Searchable Dropdown, Spotlight Search Pro, Live Indicator Pro, Status Badge, Badges Kit, Info Tooltip, Bordered Tooltip, Sliding Tab Nav, Tabs NR, Avatar Hover Tooltip, Minimal Avatars, Sales Dashboard and Data Studio Pro. Not usable: WF Charts Lite and Metrics Grid (Framer would not install them). Avatar Group would not accept images, so it renders empty. These ship with their own styling, so several (dark KPI cards, purple toggle, orange tabs) clash with the palette and would need recolouring.
