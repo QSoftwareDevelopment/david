@@ -15,15 +15,15 @@ export const staff = [["Maya Reyes", "Duty manager"], ["Luis Pereira", "Maintena
 export const people = ["All people", "Luis P.", "Dana K.", "Kitchen", "Front desk", "Concierge", "Laundry desk", "Restaurant"];
 
 export const requests = [
-  { id: "r1", dept: "Maintenance", room: "608", ask: "Air conditioning not cooling", guest: "Marcus Bell", ch: "WhatsApp", opened: "10:42", who: "Luis P.", st: "review" },
-  { id: "r2", dept: "Front desk", room: "412", ask: "Late check-out to 2 pm", guest: "Priya Nair", ch: "SMS", opened: "10:36", who: "Front desk", st: "pending" },
-  { id: "r3", dept: "Room service", room: "305", ask: "Oat flat white, 7:30 am", guest: "Tom Hadley", ch: "iMessage", opened: "10:39", who: "Kitchen", st: "pending" },
-  { id: "r4", dept: "Housekeeping", room: "221", ask: "Two extra pillows, hypoallergenic", guest: "Ana Souza", ch: "WhatsApp", opened: "10:40", who: "Dana K.", st: "pending" },
-  { id: "r5", dept: "Laundry", room: "517", ask: "Pickup for four shirts", guest: "Wei Chen", ch: "Messenger", opened: "10:41", who: "Laundry desk", st: "progress" },
-  { id: "r6", dept: "Restaurant", room: "701", ask: "Table for two, Tuesday 7:30 pm", guest: "James Okafor", ch: "WhatsApp", opened: "10:20", who: "Restaurant", st: "pending" },
-  { id: "r7", dept: "Maintenance", room: "226", ask: "Shower drain running slowly", guest: "Hannah Cole", ch: "Messenger", opened: "09:47", who: "Luis P.", st: "progress" },
-  { id: "r8", dept: "Front desk", room: "118", ask: "Airport taxi at 6 am", guest: "Sofia Lindqvist", ch: "SMS", opened: "10:12", who: "Concierge", st: "done" },
-  { id: "r9", dept: "Housekeeping", room: "403", ask: "Do not disturb until 11", guest: "Noah Adler", ch: "SMS", opened: "09:58", who: "Dana K.", st: "done" },
+  { id: "r1", dept: "Maintenance", room: "608", ask: "Air conditioning not cooling", guest: "Marcus Bell", ch: "WhatsApp", opened: "10:42", to: "t2", st: "review" },
+  { id: "r2", dept: "Front desk", room: "412", ask: "Late check-out to 2 pm", guest: "Priya Nair", ch: "SMS", opened: "10:36", to: "t4", st: "pending" },
+  { id: "r3", dept: "Room service", room: "305", ask: "Oat flat white, 7:30 am", guest: "Tom Hadley", ch: "iMessage", opened: "10:39", to: "t7", st: "pending" },
+  { id: "r4", dept: "Housekeeping", room: "221", ask: "Two extra pillows, hypoallergenic", guest: "Ana Souza", ch: "WhatsApp", opened: "10:40", to: "t3", st: "pending" },
+  { id: "r5", dept: "Laundry", room: "517", ask: "Pickup for four shirts", guest: "Wei Chen", ch: "Messenger", opened: "10:41", to: "t8", st: "progress" },
+  { id: "r6", dept: "Restaurant", room: "701", ask: "Table for two, Tuesday 7:30 pm", guest: "James Okafor", ch: "WhatsApp", opened: "10:20", to: "t9", st: "pending" },
+  { id: "r7", dept: "Maintenance", room: "226", ask: "Shower drain running slowly", guest: "Hannah Cole", ch: "Messenger", opened: "09:47", to: "t2", st: "progress" },
+  { id: "r8", dept: "Front desk", room: "118", ask: "Airport taxi at 6 am", guest: "Sofia Lindqvist", ch: "SMS", opened: "10:12", to: "t5", st: "done" },
+  { id: "r9", dept: "Housekeeping", room: "403", ask: "Do not disturb until 11", guest: "Noah Adler", ch: "SMS", opened: "09:58", to: "t3", st: "done" },
 ];
 
 export const arrivals = [
@@ -76,14 +76,32 @@ export const eventPool = [
   ["←", "UPDATE PROFILE", "Tanaka · pillow preference confirmed"], ["←", "CHECK-IN", "Room 701 · Vasquez · key issued"], ["→", "HOUSEKEEPING NOTE", "221 · hypoallergenic pillows delivered"],
 ];
 
+export const triggers = {
+  before_arrival: { label: "Before arrival", unit: "days before arrival" },
+  arrival_day: { label: "Arrival day", unit: "" },
+  during_stay: { label: "During the stay", unit: "day of the stay" },
+  after_checkout: { label: "After check-out", unit: "days after check-out" },
+  after_booking: { label: "After booking", unit: "days after booking" },
+  occasion: { label: "Guest occasion", unit: "days before the occasion in Opera" },
+};
+export const audiences = { all: ["All guests", 6], members: ["Gold and Silver members", 3], first: ["First-time guests", 2], returning: ["Returning guests", 4], occasion: ["Guests with an occasion in Opera", 1], allergy: ["Guests with an allergy on file", 2] };
+export const channelChoices = { best: "Guest’s preferred channel", whatsapp: "WhatsApp", sms: "SMS", messenger: "Messenger", imessage: "iMessage" };
+export const mergeFields = ["first_name", "arrival_date", "checkout_date", "room", "hotel", "allergy"];
+export const sampleGuest = { first_name: "Elena", arrival_date: "Saturday", checkout_date: "Tuesday", room: "Suite 701", hotel: "The Harbour House", allergy: "no shellfish" };
+
 export const campaigns = [
-  { id: "k1", kicker: "Before arrival", name: "Pre-arrival questions", when: "3 days before arrival", what: "Asks about dietary needs and arrival time, so the team is ready.", on: true },
-  { id: "k2", kicker: "Arrival day", name: "Welcome and directions", when: "Morning of arrival", what: "A welcome, directions, and who to ask for.", on: true },
-  { id: "k3", kicker: "Mid-stay", name: "How is it going, 1 to 10", when: "Day two of the stay", what: "Asks how it’s going. Low scores go straight to the duty manager.", on: true },
-  { id: "k4", kicker: "After they leave", name: "Thanks and a review link", when: "Day after check-out", what: "Thanks them. Happy guests get a review link.", on: true },
-  { id: "k5", kicker: "Win-back", name: "Come back and stay", when: "Six weeks later", what: "Invites past guests back.", on: false },
+  { id: "k1", name: "Pre-arrival questions", trigger: "before_arrival", days: 3, time: "10:00", audience: "all", channel: "best", mode: "david", on: true,
+    text: "Hi {first_name}, we’re looking forward to {arrival_date}. Is there anything we should know before you arrive, like dietary needs, or a late arrival time? I can pass it to the team so it’s ready." },
+  { id: "k2", name: "Welcome and directions", trigger: "arrival_day", days: 0, time: "09:00", audience: "all", channel: "best", mode: "david", on: true,
+    text: "Good morning {first_name}. Your room at {hotel} is being prepared and check-in opens at 3 pm. If you’re earlier, I can ask the front desk to hold your bags." },
+  { id: "k3", name: "How is it going, 1 to 10", trigger: "during_stay", days: 2, time: "11:30", audience: "all", channel: "best", mode: "david", on: true,
+    text: "Hi {first_name}, how is your stay going so far, from 1 to 10? If anything isn’t right, tell me and I’ll get it fixed today." },
+  { id: "k4", name: "Thanks and a review link", trigger: "after_checkout", days: 1, time: "10:00", audience: "all", channel: "best", mode: "david", on: true,
+    text: "Thank you for staying with us, {first_name}. If you enjoyed it, a short review helps a lot: https://harbourhouse.example/review" },
+  { id: "k5", name: "Come back and stay", trigger: "after_checkout", days: 42, time: "10:00", audience: "returning", channel: "best", mode: "david", on: false,
+    text: "Hi {first_name}, it’s been a few weeks since {hotel}. If you’re planning another trip, I can hold a room for you." },
 ];
-export const rules = ["Only guests who have said yes to texts", "Never in quiet hours: 9 pm to 8 am, hotel time", "At most one campaign text a day per guest", "STOP is honoured immediately and permanently", "Nothing invented: only what is on your menu and policies"];
+export const rulesDefault = { quietStart: "21:00", quietEnd: "08:00", perDay: 1 };
 
 export const channels = [
   { id: "wa", name: "WhatsApp Business", handle: "+1 416 555 0142", n: 94, rule: "Free replies for 24 hours after a guest writes. After that, only an approved template." },
@@ -94,19 +112,87 @@ export const channels = [
 export const numbers = [["+1 416 555 0142", "Guest concierge", "WhatsApp, SMS"], ["+1 416 555 0177", "Staff alerts", "SMS"]];
 
 export const knowledge = [
-  { name: "Room types and rates", detail: "12 room types, rate codes, inclusions", src: "From Opera", st: "ok", when: "Synced 03:00" },
-  { name: "Hotel policies", detail: "Check-in 3 pm, check-out 11 am, parking, accessibility", src: "Written by staff", st: "pend", when: "Edited 2 days ago" },
-  { name: "Restaurant and bar hours", detail: "4 outlets, last orders, dress code", src: "Written by staff", st: "pend", when: "Edited last week" },
-  { name: "Room service menu", detail: "38 items with prices and allergens", src: "From Square", st: "ok", when: "Synced 10:05" },
-  { name: "Departments and contacts", detail: "7 departments, who to ask, after-hours cover", src: "Written by staff", st: "pend", when: "Edited 5 days ago" },
-  { name: "Local recommendations", detail: "24 places the concierge stands behind", src: "Written by staff", st: "pend", when: "Edited last month" },
+  { id: "n1", name: "Room types and rates", detail: "12 room types, rate codes, inclusions", src: "From Opera", st: "ok", when: "Synced 03:00", keywords: "room type, rate, suite, upgrade", answer: "I can check room types and rates in Opera. Tell me your dates and I’ll find the options." },
+  { id: "n2", name: "Hotel policies", detail: "Check-in 3 pm, check-out 11 am, accessibility", src: "Written by staff", st: "pend", when: "Edited 2 days ago", keywords: "check-out, checkout, check out, check-in, checkin, check in, late", answer: "Check-in opens at 3 pm and check-out is 11 am. If you’d like longer, I can ask the front desk about a late check-out for you." },
+  { id: "n3", name: "Restaurant and bar hours", detail: "4 outlets, last orders, dress code", src: "Written by staff", st: "pend", when: "Edited last week", keywords: "breakfast, restaurant, bar, dinner, lunch, table", answer: "The restaurant serves breakfast 7 to 10:30 and dinner 6 to 10. I can request a table for you." },
+  { id: "n4", name: "Room service menu", detail: "38 items with prices and allergens", src: "From Square", st: "ok", when: "Synced 10:05", keywords: "room service, menu, coffee, food, order, hungry", answer: "Room service runs 6 am to 11 pm. I can read you the menu, and I always pass allergies to the kitchen." },
+  { id: "n5", name: "Departments and contacts", detail: "7 departments, who to ask, after-hours cover", src: "Written by staff", st: "pend", when: "Edited 5 days ago", keywords: "front desk, housekeeping, maintenance, contact, manager", answer: "I can pass that to the right team and update you. Tell me what you need." },
+  { id: "n6", name: "Local recommendations", detail: "24 places the concierge stands behind", src: "Written by staff", st: "pend", when: "Edited last month", keywords: "nearby, recommend, walk, attraction, museum, sightseeing", answer: "The concierge recommends the harbour walk and Fisher’s Market, both ten minutes away. I can book a table nearby too." },
+  { id: "n7", name: "Wi-Fi", detail: "Network name and how to connect", src: "Written by staff", st: "pend", when: "Edited last month", keywords: "wifi, wi-fi, internet, password", answer: "Wi-Fi is free: connect to HarbourHouse-Guest. The password is on your key card sleeve." },
+  { id: "n8", name: "Parking", detail: "Underground, $38 a night", src: "Written by staff", st: "pend", when: "Edited last month", keywords: "parking, car, valet, garage", answer: "Parking is underground, $38 a night. Tell me your plate and I’ll add it to your stay." },
 ];
-// Keyword answers David can give from what he knows.
-export const answers = [
-  [/check.?out/i, "Check-out is 11 am. If you’d like longer, I can ask the front desk about a late check-out for you.", "Hotel policies"],
-  [/check.?in|arriv/i, "Check-in opens at 3 pm. If you’re earlier, I can ask the front desk to hold your bags.", "Hotel policies"],
-  [/breakfast|restaurant|bar|dinner|lunch/i, "The restaurant serves breakfast 7 to 10:30 and dinner 6 to 10. I can request a table for you.", "Restaurant and bar hours"],
-  [/room service|menu|coffee|food/i, "Room service runs 6 am to 11 pm. I can read you the menu, and I always pass allergies to the kitchen.", "Room service menu"],
-  [/wifi|wi-fi|internet/i, "Wi-Fi is free: connect to HarbourHouse-Guest. The password is on your key card sleeve.", "Hotel policies"],
-  [/parking|car/i, "Parking is underground, $38 a night. Tell me your plate and I’ll add it to your stay.", "Hotel policies"],
+
+// ---- Guest directory: each guest has their own Opera / David fields ----
+const LABEL = { ok: "Synced", pend: "Awaiting approval", review: "Needs review" };
+let _f = 0;
+const f = (field, opera, david, dir, st, tip = "") => ({ id: "f" + ++_f, field, opera, david, dir, st, label: LABEL[st], tip });
+export const guests = [
+  { id: "g-elena", name: "Elena Vasquez", room: "Suite 701", status: "arriving", when: "Arriving 13:30", tier: "Gold", stays: 3, ch: ["WhatsApp", "Messenger", "SMS"], phone: "+44 7700 900418", opera: "#00481726", conv: "c5", fields: guestFields.map((x) => ({ ...x })) },
+  { id: "g-marcus", name: "Marcus Bell", room: "Room 608", status: "inhouse", when: "In house · to 1 Nov", tier: "Gold", stays: 11, ch: ["WhatsApp"], phone: "+44 7700 900611", opera: "#00392214", conv: "c1", fields: [
+    f("Phone", "+44 7700 900118", "+44 7700 900611 · messages from WhatsApp", "Opera ⇄ David", "review", "The number he writes from differs from Opera. Staff decide which to keep."),
+    f("Breakfast", "", "Oat flat white most mornings", "David → Opera", "pend", "Noticed from six room-service orders."),
+    f("Pillows", "Firm", "Firm", "Opera ⇄ David", "ok"), f("Room", "Quiet floor", "Quiet floor, away from the lift", "Opera ⇄ David", "ok")] },
+  { id: "g-priya", name: "Priya Nair", room: "Room 412", status: "departing", when: "Departing today", tier: "Silver", stays: 3, ch: ["SMS"], phone: "+44 7700 900233", opera: "#00455781", conv: "c2", fields: [
+    f("Late check-out", "", "Asked for 2 pm today", "David → Opera", "pend", "Waiting on the front desk to confirm."),
+    f("Contact", "", "Prefers texts to calls", "David → Opera", "pend"), f("Pillows", "Soft", "Soft", "Opera ⇄ David", "ok"), f("Allergy", "None on file", "None mentioned", "Opera ⇄ David", "ok")] },
+  { id: "g-tom", name: "Tom Hadley", room: "Room 305", status: "inhouse", when: "In house · to 31 Oct", tier: "Gold", stays: 14, ch: ["iMessage"], phone: "+44 7700 900812", opera: "#00311902", conv: "c3", fields: [
+    f("Coffee", "", "Oat flat white, mornings, six times", "David → Opera", "pend", "Offered as a question, never assumed."),
+    f("Pillows", "Firm", "Firm", "Opera ⇄ David", "ok"), f("Room", "High floor", "High floor", "Opera ⇄ David", "ok"), f("Allergy", "None on file", "None mentioned", "Opera ⇄ David", "ok")] },
+  { id: "g-ana", name: "Ana Souza", room: "Room 221", status: "inhouse", when: "In house · to 2 Nov", tier: "Member", stays: 1, ch: ["WhatsApp"], phone: "+55 11 91234 5678", opera: "#00502933", conv: "c4", fields: [
+    f("Allergy", "", "Feather and down, told David tonight", "David → Opera", "review", "Allergies are never written without a person checking."),
+    f("Pillows", "", "Hypoallergenic", "David → Opera", "pend"), f("Language", "Portuguese", "Portuguese", "Opera ⇄ David", "ok")] },
+  { id: "g-james", name: "James Okafor", room: "Suite 702", status: "arriving", when: "Arriving 14:00", tier: "Silver", stays: 2, ch: ["WhatsApp"], phone: "+234 802 555 0191", opera: "#00478845", conv: "c6", fields: [
+    f("Dinner", "", "Table for two, Tuesday 7:30 pm", "David → Opera", "pend"), f("Occasion", "Anniversary, 3 Nov", "Anniversary, 3 Nov", "Opera ⇄ David", "ok"), f("Allergy", "None on file", "None mentioned", "Opera ⇄ David", "ok")] },
+  { id: "g-lukas", name: "Lukas Brandt", room: "Room 514", status: "arriving", when: "Arriving 22:30", tier: "Member", stays: 1, ch: ["SMS"], phone: "+49 151 5550 144", opera: "#00511208", conv: null, fields: [
+    f("Arrival time", "15:15", "22:30 · night desk alerted", "David → Opera", "pend", "He told David his flight is late."), f("Language", "German", "German, speaks English", "Opera ⇄ David", "ok"), f("Allergy", "None on file", "None mentioned", "Opera ⇄ David", "ok")] },
+  { id: "g-mei", name: "Mei Tanaka", room: "Room 612", status: "arriving", when: "Arriving 16:00", tier: "Gold", stays: 4, ch: ["WhatsApp", "iMessage"], phone: "+81 90 5550 7712", opera: "#00288401", conv: null, fields: [
+    f("Tea", "", "Jasmine tea on arrival", "David → Opera", "pend"), f("Room", "High floor", "High floor, firm pillows", "Opera ⇄ David", "ok"), f("Stays", "4", "4th stay", "Opera → David", "ok")] },
+  { id: "g-wei", name: "Wei Chen", room: "Room 517", status: "inhouse", when: "In house · to 3 Nov", tier: "Silver", stays: 2, ch: ["Messenger"], phone: "+86 138 5550 2231", opera: "#00493377", conv: null, fields: [
+    f("Laundry", "", "Shirts, back by Sunday", "David → Opera", "pend"), f("Diet", "Halal", "Halal", "Opera ⇄ David", "ok"), f("Room", "Low floor", "Low floor", "Opera ⇄ David", "ok")] },
+  { id: "g-hannah", name: "Hannah Cole", room: "Room 226", status: "inhouse", when: "In house · to 1 Nov", tier: "Member", stays: 1, ch: ["Messenger"], phone: "+44 7700 900764", opera: "#00518890", conv: null, fields: [
+    f("Accessibility", "Step-free access", "Step-free access", "Opera ⇄ David", "ok"), f("Maintenance", "", "Shower drain slow, work order raised", "David → Opera", "pend"), f("Room", "Away from the lift", "Away from the lift", "Opera ⇄ David", "ok")] },
+  { id: "g-noah", name: "Noah Adler", room: "Room 403", status: "departing", when: "Departing 1 Nov", tier: "Silver", stays: 6, ch: ["SMS"], phone: "+1 647 555 0178", opera: "#00352240", conv: null, fields: [
+    f("Do not disturb", "", "Until 11 am every day", "David → Opera", "pend"), f("Pillows", "Standard", "Standard", "Opera ⇄ David", "ok"), f("Allergy", "None on file", "None mentioned", "Opera ⇄ David", "ok")] },
 ];
+
+// ---- Connections (demo only: connecting here changes this page, not a real integration) ----
+const S_ = true;
+export const connections = [
+  { id: "opera", name: "Opera Cloud", cat: "Property management", desc: "Guest profiles, reservations, rooms and work orders. Opera stays the record.", status: "connected", last: "Streaming now", fields: [["Hostname", "https://harbour.example-opera.com"], ["Chain code", "HH"], ["Property code", "HARBOUR"], ["App key", "", S_], ["Client ID", ""], ["Client secret", "", S_]] },
+  { id: "square", name: "Square", cat: "Point of sale", desc: "Room service menu, prices and open orders, with the guest’s allergy on every line.", status: "connected", last: "Synced 10:05", fields: [["Access token", "", S_], ["Location ID", "L8K2…"]] },
+  { id: "toast", name: "Toast", cat: "Point of sale", desc: "Restaurant and bar menus, tables and orders, so David can answer and book from live data.", status: "available", last: "", fields: [["Restaurant GUID", ""], ["Client ID", ""], ["Client secret", "", S_]] },
+  { id: "lightspeed", name: "Lightspeed", cat: "Point of sale", desc: "Menus and orders for outlets that run on Lightspeed.", status: "available", last: "", fields: [["Account ID", ""], ["API key", "", S_]] },
+  { id: "opentable", name: "OpenTable", cat: "Reservations", desc: "Check availability and book restaurant tables for guests.", status: "available", last: "", fields: [["Restaurant ID", ""], ["API key", "", S_]] },
+  { id: "sevenrooms", name: "SevenRooms", cat: "Reservations", desc: "Table bookings, waitlists and guest notes for your venues.", status: "available", last: "", fields: [["Venue ID", ""], ["API key", "", S_]] },
+  { id: "whatsapp", name: "WhatsApp Business", cat: "Messaging", desc: "Guests message you on WhatsApp. David replies within the 24-hour window.", chan: "wa", fields: [] },
+  { id: "messenger", name: "Messenger", cat: "Messaging", desc: "Guests message your Facebook page. David replies in the same thread.", chan: "ms", fields: [] },
+  { id: "apple", name: "Apple Messages for Business", cat: "Messaging", desc: "iMessage chats through an approved messaging provider.", chan: "im", fields: [] },
+  { id: "twilio", name: "SMS (Twilio)", cat: "Messaging", desc: "Texts to and from your hotel number, with consent and STOP handled.", chan: "sm", fields: [] },
+  { id: "slack", name: "Slack", cat: "Team alerts", desc: "Sends each request to the right department channel, and nudges the manager if it is missed.", status: "connected", last: "Synced 10:42", fields: [["Webhook URL", "https://hooks.slack.example/…", S_], ["Default channel", "#front-desk"]] },
+  { id: "zalo", name: "Zalo (ZNS)", cat: "Team alerts", desc: "Messages the assigned employee on their own Zalo number the moment a request is assigned, and lets them reply DONE.", status: "connected", last: "Delivered 10:41", fields: [["Official Account ID", "2847…"], ["App ID", "1234…"], ["App secret", "", S_], ["Access token", "", S_], ["Approved template ID", "ZNS-TASK-001"]] },
+  { id: "teams", name: "Microsoft Teams", cat: "Team alerts", desc: "Request alerts and the morning briefing in Teams channels.", status: "available", last: "", fields: [["Webhook URL", "", S_]] },
+  { id: "google", name: "Google Business Profile", cat: "Reviews", desc: "Sends happy guests to your review link and flags unhappy ones to the duty manager.", status: "attention", last: "Sign-in expired 2 days ago", fields: [["Account email", "frontdesk@harbourhouse.example"], ["Place ID", ""]] },
+  { id: "tripadvisor", name: "TripAdvisor", cat: "Reviews", desc: "Review links and listing details.", status: "available", last: "", fields: [["Location ID", ""]] },
+  { id: "claude", name: "Anthropic Claude", cat: "AI", desc: "Writes David’s replies, grounded in what he knows about your hotel.", status: "connected", last: "Healthy", fields: [["API key", "", S_], ["Model", "Claude"]] },
+];
+
+// ---- Team: every employee has a profile with a Zalo number (fictional numbers) ----
+export const departments = ["Maintenance", "Housekeeping", "Room service", "Front desk", "Laundry", "Restaurant"];
+export const team = [
+  { id: "t1", name: "Maya Reyes", role: "Duty manager", dept: "Front desk", zalo: "+84905550101", lang: "English", consent: true, onShift: true },
+  { id: "t2", name: "Luis Pereira", role: "Maintenance engineer", dept: "Maintenance", zalo: "+84905550102", lang: "English", consent: true, onShift: true },
+  { id: "t3", name: "Dana Kowalski", role: "Housekeeping supervisor", dept: "Housekeeping", zalo: "+84905550103", lang: "English", consent: true, onShift: true },
+  { id: "t4", name: "Omar Haddad", role: "Front desk agent", dept: "Front desk", zalo: "+84905550104", lang: "English", consent: true, onShift: true },
+  { id: "t5", name: "Sofia Lindqvist", role: "Concierge", dept: "Front desk", zalo: "+84905550105", lang: "English", consent: true, onShift: true },
+  { id: "t6", name: "Ben Okafor", role: "Room service lead", dept: "Room service", zalo: "", lang: "English", consent: false, onShift: true },
+  { id: "t7", name: "Minh Tran", role: "Kitchen", dept: "Room service", zalo: "+84905550107", lang: "Vietnamese", consent: true, onShift: true },
+  { id: "t8", name: "Linh Nguyen", role: "Laundry attendant", dept: "Laundry", zalo: "+84905550108", lang: "Vietnamese", consent: true, onShift: true },
+  { id: "t9", name: "An Pham", role: "Restaurant host", dept: "Restaurant", zalo: "+84905550109", lang: "Vietnamese", consent: true, onShift: false },
+];
+export const autoAssignDefault = { Maintenance: "t2", Housekeeping: "t3", "Room service": "t7", "Front desk": "t4", Laundry: "t8", Restaurant: "t9" };
+export const zaloLogSeed = [
+  { id: "z3", time: "10:41", to: "Linh Nguyen", phone: "+84905550108", req: "r5", text: "Task for Linh: Laundry, room 517. Pickup for four shirts (guest: Wei Chen). Reply DONE when finished.", status: "delivered", reason: "", kind: "assignment" },
+  { id: "z2", time: "10:40", to: "Dana Kowalski", phone: "+84905550103", req: "r4", text: "Task for Dana: Housekeeping, room 221. Two extra pillows, hypoallergenic (guest: Ana Souza). Reply DONE when finished.", status: "delivered", reason: "", kind: "assignment" },
+  { id: "z1", time: "10:42", to: "Luis Pereira", phone: "+84905550102", req: "r1", text: "Task for Luis: Maintenance, room 608. Air conditioning not cooling (guest: Marcus Bell). Reply DONE when finished.", status: "delivered", reason: "", kind: "assignment" },
+];
+export const apiKeysSeed = [{ id: "key1", name: "Front desk automation", secret: "dvd_live_7f3a91c2e84b5d06a1f9", created: "12 Oct", last: "Today 10:40" }];

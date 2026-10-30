@@ -1,0 +1,128 @@
+openapi: 3.0.3
+info:
+  title: David automation API
+  version: 0.1.0
+  description: |
+    Create and assign hotel requests from other systems. When a request is assigned,
+    David messages the employee on their own Zalo number, and tells the guest who is
+    handling it. When the employee replies DONE on Zalo, the request is closed and the
+    guest is told it is finished.
+
+    STATUS: this is the design the server should implement. The website in `web/`
+    runs a mock of it in the browser. Nothing here is deployed yet.
+
+    Zalo notes (verify against developers.zalo.me before building): task alerts to a
+    phone number go through Zalo Notification Service (ZNS), which only delivers
+    messages that use a template Zalo has approved (up to 400 characters), and the sender
+    must be a Zalo-registered business. Free-form replies to a person need that person to
+    have messaged the Official Account within the last 48 hours.
+servers:
+  - url: https://api.harbourhouse.example
+    description: Placeholder
+security:
+  - bearerAuth: []
+paths:
+  /v1/requests:
+    get:
+      summary: List requests
+      responses: { "200": { description: OK } }
+    post:
+      summary: Create a request
+      description: Auto-assigns to the department's default person, messages them on Zalo and (unless disabled) tells the guest.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [department, room, request]
+              properties:
+                department: { type: string, enum: [Maintenance, Housekeeping, Room service, Front desk, Laundry, Restaurant] }
+                room: { type: string }
+                request: { type: string }
+                guest: { type: string }
+                channel: { type: string, description: Channel the guest wrote on }
+                assignee_id: { type: string, description: Overrides the department default }
+                notify_guest: { type: boolean, default: true }
+      responses:
+        "201": { description: Created }
+        "422": { description: Invalid department, room or request }
+  /v1/requests/{id}:
+    patch:
+      summary: Change status
+      description: Setting `done` requires the request to be assigned, and tells the guest it is finished.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [pending, progress, review, done] }
+                notify_guest: { type: boolean, default: true }
+      responses: { "200": { description: OK }, "409": { description: Not allocated yet }, "404": { description: Not found } }
+  /v1/requests/{id}/assign:
+    post:
+      summary: Assign or reassign
+      description: Sends the new person a Zalo message and tells the guest who is on it.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assignee_id: { type: string, nullable: true }
+                notify_guest: { type: boolean, default: true }
+      responses: { "200": { description: OK }, "404": { description: Request or employee not found } }
+  /v1/staff:
+    get:
+      summary: List employees
+      responses: { "200": { description: OK } }
+    post:
+      summary: Add an employee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, department, zalo_phone, consent]
+              properties:
+                name: { type: string }
+                role: { type: string }
+                department: { type: string }
+                zalo_phone: { type: string, description: "Vietnamese mobile, e.g. 0905550142 or +84905550142" }
+                consent: { type: boolean, description: Must be true. The employee agreed to Zalo messages. }
+                language: { type: string }
+                on_shift: { type: boolean }
+      responses: { "201": { description: Created }, "409": { description: Duplicate Zalo number }, "422": { description: Invalid phone or no consent } }
+  /v1/staff/{id}:
+    patch:
+      summary: Update an employee
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK }, "404": { description: Not found }, "422": { description: Invalid phone } }
+  /v1/notifications/zalo/test:
+    post:
+      summary: Send a test Zalo message to one employee
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [staff_id], properties: { staff_id: { type: string } } } } }
+      responses: { "200": { description: OK } }
+  /v1/webhooks/zalo:
+    post:
+      summary: Incoming Zalo event (employee replies)
+      description: Zalo calls this. A reply starting with DONE closes the employee's open request and tells the guest.
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event_name: { type: string, example: user_send_text }
+                sender: { type: object, properties: { phone: { type: string } } }
+                message: { type: object, properties: { text: { type: string } } }
+      responses: { "200": { description: Handled } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
