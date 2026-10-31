@@ -17,6 +17,7 @@ cd web && python3 -m http.server 8130   # open http://localhost:8130
 - **Channels:** turn David on or off per channel.
 - **David's brain:** connections to Opera, Square, Toast, Zalo, Slack and more (connect, test and disconnect in a setup panel), the team directory with a Zalo number and consent for every employee, a Zalo message log, an API tab with keys and a "try it" console, editable knowledge David answers from, and a Try David box.
 - **Search:** Cmd or Ctrl K finds pages, guests, campaigns and requests.
+- **Vietnamese:** an EN | VI switch at the top right. It translates the interface and sample records; guest messages, names, numbers and API text stay as they are. The wording in `i18n.js` has not had a native review.
 - Everything you change is saved in the browser. "Reset demo data" in the sidebar clears it.
 
 ## Not wired up yet

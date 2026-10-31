@@ -1,4 +1,5 @@
 import * as D from "./data.js";
+import { translate } from "./i18n.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -338,7 +339,7 @@ function render() {
   save();
 }
 $("#hotel").textContent = D.hotel.name;
-$("#reset").addEventListener("click", () => { if (confirm("Clear every change you have made and start again?")) { try { localStorage.removeItem(KEY); } catch { /* ignore */ } location.reload(); } });
+$("#reset").addEventListener("click", () => { if (confirm(loc("Clear every change you have made and start again?"))) { try { localStorage.removeItem(KEY); } catch { /* ignore */ } location.reload(); } });
 
 /* ---------- actions ---------- */
 const next = { review: "progress", pending: "progress", progress: "done", done: "pending" };
@@ -706,4 +707,43 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && items[sel]) { items[sel].go(); closePal(); }
 });
 
+/* ---------- language (EN | VI) ---------- */
+// Display-time translation: the app always builds English, then this rewrites the text on screen.
+// Guest messages and campaign bubbles are left alone, because they are what the guest sees or wrote.
+const LANG_KEY = "david-lang", ATTRS = ["placeholder", "title", "aria-label"], SKIP = "script,style,pre,textarea,.msg .b,.bubble";
+let lang = "en"; try { lang = localStorage.getItem(LANG_KEY) === "vi" ? "vi" : "en"; } catch { /* ignore */ }
+const loc = (en) => (lang === "vi" ? translate(en) : en);
+function localize(root = document.body) {
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n;
+  while ((n = w.nextNode())) {
+    const par = n.parentElement; if (!par || par.closest(SKIP)) continue;
+    if (n.__vi !== undefined && n.data !== n.__vi) delete n.__en;
+    if (n.__en === undefined) n.__en = n.data;
+    if (lang === "vi") { n.__vi = translate(n.__en); if (n.data !== n.__vi) n.data = n.__vi; }
+    else if (n.data !== n.__en) { n.data = n.__en; n.__vi = undefined; }
+  }
+  const els = root.nodeType === 1 ? [root, ...root.querySelectorAll("[placeholder],[title],[aria-label]")] : [...root.querySelectorAll("[placeholder],[title],[aria-label]")];
+  els.forEach((el) => { if (el.closest(".bubble")) return; ATTRS.forEach((at) => {
+    const v = el.getAttribute(at); if (v === null) return; el.__en ||= {}; el.__vi ||= {};
+    if (el.__vi[at] !== undefined && v !== el.__vi[at]) delete el.__en[at];
+    if (el.__en[at] === undefined) el.__en[at] = v;
+    const out = lang === "vi" ? translate(el.__en[at]) : el.__en[at]; el.__vi[at] = out; if (v !== out) el.setAttribute(at, out);
+  }); });
+  const t = document.title; if (!document.__t || t !== document.__tv) document.__t = t.replace(/ · David$/, "");
+  document.__tv = (lang === "vi" ? translate(document.__t) : document.__t) + " · David"; if (document.title !== document.__tv) document.title = document.__tv;
+}
+let busy = false; const mo = new MutationObserver((ms) => {
+  if (busy) return; busy = true;
+  for (const m of ms) { if (m.type === "characterData") { if (m.target.parentElement) localize(m.target.parentElement); } else if (m.type === "attributes") localize(m.target); else m.addedNodes.forEach((x) => { if (x.nodeType === 1) localize(x); else if (x.nodeType === 3 && x.parentElement) localize(x.parentElement); }); }
+  mo.takeRecords(); busy = false;
+});
+function setLang(l) {
+  lang = l === "vi" ? "vi" : "en"; try { localStorage.setItem(LANG_KEY, lang); } catch { /* ignore */ }
+  document.documentElement.lang = lang; busy = true; localize(); busy = false; render(); drawer();
+  document.querySelectorAll("#lang button").forEach((b) => { const on = b.dataset.l === lang; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
+}
+document.querySelectorAll("#lang button").forEach((b) => b.addEventListener("click", () => setLang(b.dataset.l)));
+mo.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS });
+
 render();
+setLang(lang);
