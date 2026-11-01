@@ -176,6 +176,47 @@ export const VI = {
 VI["What David is connected to, what he knows about The Harbour House, and how he behaves"] = "David kết nối với gì, biết gì về The Harbour House và hành xử ra sao";
 VI["New key"] = "Khóa mới";
 
+Object.assign(VI, {
+  /* revenue campaigns */
+  "Revenue campaigns": "Chiến dịch doanh thu", "Setup": "Thiết lập", "Privacy and access": "Quyền riêng tư và truy cập", "Guests messaged": "Khách đã nhắn", "across the three campaigns": "trên ba chiến dịch", "Response rate": "Tỷ lệ phản hồi", "Booking conversion": "Tỷ lệ đặt dịch vụ",
+  "Extra revenue": "Doanh thu tăng thêm", "from offers booked": "từ các ưu đãi đã đặt", "Net profit": "Lợi nhuận ròng", "Results by campaign": "Kết quả theo chiến dịch", "Messaged": "Đã nhắn", "Replied": "Đã phản hồi", "Booked": "Đã đặt", "Revenue": "Doanh thu", "Costs": "Chi phí", "Offer": "Ưu đãi", "Stage": "Giai đoạn",
+  "Three campaigns that make money. Last 30 days, sample data: these are not real sales. Click one to change the offer, price, timing and message.": "Ba chiến dịch tạo ra doanh thu. 30 ngày qua, dữ liệu mẫu: đây không phải doanh số thật. Bấm vào một chiến dịch để đổi ưu đãi, giá, thời điểm và nội dung.",
+  "Pre-arrival upsell": "Bán thêm trước khi đến", "In-stay offer": "Ưu đãi trong kỳ lưu trú", "Post-stay rebooking": "Mời đặt lại sau khi trả phòng", "Ocean-view room upgrade": "Nâng hạng phòng hướng biển", "Spa treatment or dinner for two": "Liệu trình spa hoặc bữa tối cho hai người", "Direct return stay (first night)": "Quay lại đặt trực tiếp (đêm đầu tiên)",
+  "The offer": "Ưu đãi", "What is being sold": "Dịch vụ được bán", "Price ($)": "Giá ($)", "Cost to the hotel per booking ($)": "Chi phí của khách sạn cho mỗi lượt đặt ($)", "Used to work out net profit": "Dùng để tính lợi nhuận ròng", "e.g. Spa treatment": "ví dụ: Liệu trình spa", "Price and cost must be numbers, zero or more.": "Giá và chi phí phải là số, từ 0 trở lên.",
+  "Overdue tasks": "Việc quá hạn", "past their due time": "đã quá hạn", "the duty manager is told": "quản lý ca sẽ được báo",
+  "Costs are $0.04 per message sent plus what it costs the hotel to deliver each booked offer": "Chi phí là 0,04 đô la cho mỗi tin nhắn gửi đi cộng với chi phí khách sạn thực hiện từng ưu đãi đã đặt",
+  /* personalised offers */
+  "Who gets which offer": "Ai nhận ưu đãi nào", "Each guest gets the offer that fits what they like. Click a guest to see the message.": "Mỗi khách nhận ưu đãi phù hợp với sở thích của họ. Bấm vào một khách để xem tin nhắn.", "Why David chose it": "Vì sao David chọn", "Price": "Giá", "Marketing consent": "Đồng ý nhận tiếp thị",
+  "Before arrival": "Trước khi đến", "During the stay": "Trong kỳ lưu trú", "Leaving": "Sắp rời đi", "Suggested offer": "Ưu đãi đề xuất", "Message David would send": "Tin nhắn David sẽ gửi", "No preferences recorded yet": "Chưa ghi nhận sở thích nào", "Agreed": "Đã đồng ý", "Held back": "Giữ lại",
+  "No preferences on file yet, so the standard offer": "Chưa có sở thích nào được lưu, nên dùng ưu đãi tiêu chuẩn",
+  "Anniversary dinner with champagne": "Bữa tối kỷ niệm kèm champagne", "Daily oat flat white and breakfast": "Cà phê flat white sữa yến mạch và bữa sáng mỗi ngày", "Halal tasting dinner for two": "Bữa tối thử món halal cho hai người", "Seafood dinner for two": "Bữa tối hải sản cho hai người", "Vegetarian dinner for two": "Bữa tối chay cho hai người",
+  "Spa treatment": "Liệu trình spa", "Late check-out to 2 pm": "Trả phòng muộn đến 14:00", "Airport transfer": "Đưa đón sân bay", "Jasmine tea set in the room": "Bộ trà hoa nhài trong phòng", "Table reservation": "Đặt bàn", "Extra towels": "Thêm khăn tắm", "Extra pillows": "Thêm gối", "Extra blanket": "Thêm chăn", "Laundry pickup": "Lấy đồ giặt",
+  "booked an ocean-view room before": "đã từng đặt phòng hướng biển", "enjoys spa treatments": "thích các liệu trình spa", "prefers vegetarian food": "thích đồ ăn chay", "has an oat flat white most mornings": "uống cà phê flat white sữa yến mạch hầu hết buổi sáng", "orders seafood": "thường gọi hải sản", "likes dining out": "thích ăn ngoài",
+  "has an anniversary on file in Opera": "có ngày kỷ niệm được ghi trong Opera", "has used airport transfers": "đã dùng dịch vụ đưa đón sân bay", "travels for work": "đi công tác", "asks for late check-outs": "hay xin trả phòng muộn", "eats halal": "ăn halal", "likes jasmine tea": "thích trà hoa nhài",
+  "has used airport transfers and travels for work": "đã dùng dịch vụ đưa đón sân bay và đi công tác",
+  "ocean-view": "hướng biển", "spa": "spa", "vegetarian": "ăn chay", "dining": "ăn uống", "anniversary": "kỷ niệm", "transfer": "đưa đón", "business": "công tác", "late-checkout": "trả phòng muộn", "halal": "halal", "tea": "trà", "seafood": "hải sản", "coffee": "cà phê",
+  /* tasks and due times */
+  "Due": "Hạn", "Demo only: move time forward to see overdue tasks": "Chỉ là demo: tua giờ lên để xem các việc quá hạn", "+15 min": "+15 phút", "Send as guest": "Gửi như khách",
+  "Overdue: the duty manager was told": "Quá hạn: quản lý ca đã được báo",
+  "Created by David": "Do David tạo", "No requests yet.": "Chưa có yêu cầu nào.", "Sending on Zalo": "Đang gửi qua Zalo",
+  /* privacy */
+  "Agreed to marketing": "Đã đồng ý nhận tiếp thị", "guests who said yes": "khách đã đồng ý", "no consent, never messaged": "chưa đồng ý, không bao giờ được nhắn", "Open data requests": "Yêu cầu dữ liệu đang mở", "export or deletion": "xuất hoặc xóa dữ liệu", "Access events": "Lượt truy cập", "who looked, logged": "ai đã xem đều được ghi lại",
+  "Sample data. These controls show how guest data is protected; they do not make a hotel compliant on their own. A lawyer should confirm what applies.": "Dữ liệu mẫu. Các chức năng này cho thấy cách bảo vệ dữ liệu khách; chúng không tự làm khách sạn tuân thủ pháp luật. Hãy nhờ luật sư xác nhận quy định áp dụng.",
+  "Marketing consent": "Đồng ý nhận tiếp thị", "A guest only gets a campaign if they agreed. Changing it is logged.": "Khách chỉ nhận chiến dịch nếu đã đồng ý. Mọi thay đổi đều được ghi lại.", "Only the duty manager can change this.": "Chỉ quản lý ca mới được thay đổi mục này.", "A guest only gets a campaign if they agreed. Only the duty manager can change this.": "Khách chỉ nhận chiến dịch nếu đã đồng ý. Chỉ quản lý ca mới được thay đổi mục này.",
+  "Source": "Nguồn", "Date": "Ngày", "Marketing messages": "Tin nhắn tiếp thị", "Booking form": "Biểu mẫu đặt phòng", "Opera profile": "Hồ sơ Opera", "Never asked": "Chưa từng hỏi", "Replied STOP": "Đã trả lời STOP", "Withdrawn by manager": "Quản lý đã rút lại",
+  "Who can see what": "Ai xem được gì", "Switch role at the bottom left to see each view": "Đổi vai trò ở góc dưới bên trái để xem từng giao diện", "Pages": "Trang", "Phone numbers": "Số điện thoại", "Manage data": "Quản lý dữ liệu", "Shown": "Hiển thị", "Hidden": "Ẩn", "Yes": "Có", "No": "Không", "Duty manager": "Quản lý ca", "Marketing": "Tiếp thị", "Marketing lead": "Trưởng nhóm tiếp thị",
+  "Data requests": "Yêu cầu dữ liệu", "A guest can ask for a copy of their data or for it to be deleted": "Khách có thể yêu cầu bản sao dữ liệu của mình hoặc yêu cầu xóa", "Export their data": "Xuất dữ liệu của họ", "Request deletion": "Yêu cầu xóa", "Mark complete": "Đánh dấu hoàn tất", "Complete": "Hoàn tất",
+  "Demo only: completing a deletion here does not remove the sample data.": "Chỉ là demo: hoàn tất yêu cầu xóa ở đây không xóa dữ liệu mẫu.", "· deletion": "· xóa dữ liệu", "· export": "· xuất dữ liệu",
+  "Access log": "Nhật ký truy cập", "Every time someone opens a guest, conversation or request, or changes something": "Mỗi khi có người mở hồ sơ khách, cuộc trò chuyện hoặc yêu cầu, hoặc thay đổi điều gì đó", "Time": "Giờ", "Who": "Ai", "What": "Việc gì",
+  "Viewed guest profile": "Đã xem hồ sơ khách", "Opened conversation": "Đã mở cuộc trò chuyện", "Opened request": "Đã mở yêu cầu", "Changed campaign": "Đã sửa chiến dịch", "Switched view": "Đã đổi giao diện", "Recorded marketing consent": "Đã ghi nhận đồng ý tiếp thị", "Withdrew marketing consent": "Đã rút lại đồng ý tiếp thị", "Changed retention": "Đã đổi thời gian lưu trữ",
+  "Exported guest data": "Đã xuất dữ liệu khách", "Requested data deletion": "Đã yêu cầu xóa dữ liệu", "Completed data request": "Đã hoàn tất yêu cầu dữ liệu",
+  "How guest data is handled": "Cách xử lý dữ liệu khách", "Keep guest profiles after check-out": "Lưu hồ sơ khách sau khi trả phòng", "12 months, then anonymise": "12 tháng, sau đó ẩn danh", "24 months, then anonymise": "24 tháng, sau đó ẩn danh", "36 months, then anonymise": "36 tháng, sau đó ẩn danh",
+  "Marketing messages only go to guests who agreed, and STOP is honoured immediately": "Tin nhắn tiếp thị chỉ gửi cho khách đã đồng ý, và lệnh STOP được thực hiện ngay lập tức", "Allergies and health notes are only visible to roles that need them": "Chỉ những vai trò cần thiết mới xem được thông tin dị ứng và sức khỏe", "Phone numbers are hidden from roles that do not need to call or message guests": "Số điện thoại được ẩn với các vai trò không cần gọi hoặc nhắn tin cho khách",
+  "Every view and change of guest data is logged with who and when": "Mọi lượt xem và thay đổi dữ liệu khách đều được ghi lại kèm người thực hiện và thời gian", "Guests can ask for a copy of their data or for deletion, with an answer date": "Khách có thể yêu cầu bản sao dữ liệu hoặc yêu cầu xóa, kèm ngày phải trả lời",
+  "Needs legal review: which laws apply depends on where the hotel is and where guests live. Examples to check: Vietnam’s personal data protection rules, the EU’s GDPR for European guests, and Canada’s PIPEDA and CASL.": "Cần luật sư xem xét: luật nào áp dụng phụ thuộc vào nơi khách sạn đặt trụ sở và nơi khách sinh sống. Ví dụ cần kiểm tra: quy định bảo vệ dữ liệu cá nhân của Việt Nam, GDPR của EU đối với khách châu Âu, và PIPEDA cùng CASL của Canada.",
+  "Viewing as": "Đang xem với vai trò", "Viewing as Duty manager": "Đang xem với vai trò Quản lý ca", "Viewing as Front desk": "Đang xem với vai trò Lễ tân", "Viewing as Housekeeping": "Đang xem với vai trò Buồng phòng", "Viewing as Marketing": "Đang xem với vai trò Tiếp thị",
+});
+
 const MON = { Oct: "Th10", Nov: "Th11", October: "tháng 10", November: "tháng 11" };
 const WDAY = { Monday: "Thứ Hai", Tuesday: "Thứ Ba", Wednesday: "Thứ Tư", Thursday: "Thứ Năm", Friday: "Thứ Sáu", Saturday: "Thứ Bảy", Sunday: "Chủ Nhật" };
 const DEPTS = "Maintenance|Housekeeping|Room service|Front desk|Laundry|Restaurant";
@@ -183,7 +224,25 @@ const hour = (h, ap) => { let n = Number(h); if (ap === "pm" && n < 12) n += 12;
 
 // Patterns for strings that carry numbers or names. The callback gets the match and the translator, so parts can be translated too.
 // Order matters: the more specific patterns come first.
+const SM = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
 const P = [
+  [/^(\d+) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)$/, (m) => `${m[1]} Th${SM[m[2]]}`],
+  [/^\$([\d,]+) net after costs$/, (m) => `$${m[1]} lợi nhuận ròng sau chi phí`], [/^after \$([\d,]+) costs$/, (m) => `sau $${m[1]} chi phí`], [/^(\d+) guests replied$/, (m) => `${m[1]} khách đã phản hồi`], [/^(\d+) guests booked an offer$/, (m) => `${m[1]} khách đã đặt ưu đãi`],
+  [/^\$([\d,]+) extra revenue and \$([\d,]+) net profit in the last 30 days · sample data$/, (m) => `$${m[1]} doanh thu tăng thêm và $${m[2]} lợi nhuận ròng trong 30 ngày qua · dữ liệu mẫu`],
+  [/^Messages \$([\d,]+) \+ delivering the offer \$([\d,]+)$/, (m) => `Tin nhắn $${m[1]} + thực hiện ưu đãi $${m[2]}`], [/^(.+) · \$(\d+)$/, (m, t) => `${t(m[1])} · $${m[2]}`],
+  [/^David picks this from what (.+) likes, not a message sent to everyone$/, (m) => `David chọn ưu đãi này dựa trên sở thích của ${m[1]}, không phải tin nhắn gửi cho tất cả mọi người`],
+  [/^Why: (.+)$/, (m, t) => `Lý do: ${t(m[1])}`], [/^Skipped: (.+) \((\w+) allergy\)$/, (m, t) => `Đã bỏ qua: ${t(m[1])} (dị ứng ${t(m[2])})`], [/^Not offered on purpose: (.+) \((\w+) allergy\)$/, (m, t) => `Cố ý không đề xuất: ${t(m[1])} (dị ứng ${t(m[2])})`],
+  [/^Will not be sent: no marketing consent \((.+)\)$/, (m, t) => `Sẽ không gửi: chưa đồng ý nhận tiếp thị (${t(m[1])})`], [/^(\w+) allergy$/, (m, t) => `dị ứng ${t(m[1])}`],
+  [/^shellfish$/, () => "hải sản có vỏ"], [/^feather$/, () => "lông vũ"],
+  [/^Demo time (\d\d:\d\d)$/, (m) => `Giờ demo ${m[1]}`], [/^Due (\d\d:\d\d)$/, (m) => `Hạn ${m[1]}`], [/^Due by (\d\d:\d\d)\.$/, (m) => `Hạn lúc ${m[1]}.`], [/^Overdue (\d+) min$/, (m) => `Quá hạn ${m[1]} phút`], [/^Done (\d\d:\d\d) · (on time|late)$/, (m) => `Xong lúc ${m[1]} · ${m[2] === "late" ? "trễ" : "đúng hạn"}`],
+  [/^(\d+) tasks? (?:is|are) overdue\. The duty manager was told$/, (m) => `${m[1]} việc quá hạn. Quản lý ca đã được báo`], [/^Overdue: the duty manager \((.+)\) was told$/, (m) => `Quá hạn: quản lý ca (${m[1]}) đã được báo`],
+  [/^(.+) · created by David$/, (m) => `${m[1]} · do David tạo`], [/^Task created for (.+) and sent to (.+)$/, (m, t) => `Đã tạo việc cho ${t(m[1])} và gửi tới ${m[2]}`], [/^Task created for (.+): (.+), due (\d\d:\d\d)$/, (m, t) => `Đã tạo việc cho ${t(m[1])}: ${t(m[2])}, hạn ${m[3]}`], [/^Task created for (.+)$/, (m, t) => `Đã tạo việc cho ${t(m[1])}`],
+  [/^Created by David from (\w+): (“.*”)$/, (m) => `David tạo từ ${m[1]}: ${m[2]}`], [/^Guest told on (\w+): due about (\d\d:\d\d)$/, (m) => `Đã báo khách qua ${m[1]}: dự kiến xong lúc ${m[2]}`],
+  [/^Demo: type as (.+), e\.g\. (“.*”)$/, (m) => `Demo: gõ như ${m[1]}, ví dụ ${m[2]}`],
+  [/^(.+) marketing consent$/, (m) => `Đồng ý tiếp thị của ${m[1]}`], [/^(.+): can now receive campaigns$/, (m) => `${m[1]}: giờ có thể nhận chiến dịch`], [/^(.+): will not receive campaigns$/, (m) => `${m[1]}: sẽ không nhận chiến dịch`], [/^Manager, (.+)$/, (m) => `Quản lý, ${m[1]}`],
+  [/^Data for (.+) downloaded$/, (m) => `Đã tải dữ liệu của ${m[1]}`], [/^Deletion requested for (.+)$/, (m) => `Đã yêu cầu xóa dữ liệu của ${m[1]}`], [/^Request for (.+) marked complete$/, (m) => `Yêu cầu của ${m[1]} đã hoàn tất`], [/^Opened (\d+ \w+) · answer by (\d+ \w+)$/, (m) => `Mở ${m[1]} · trả lời trước ${m[2]}`],
+  [/^(Duty manager|Front desk|Housekeeping|Marketing) view · who can see guest data, what guests agreed to, and who has looked$/, (m, t) => `Giao diện ${t(m[1])} · ai xem được dữ liệu khách, khách đã đồng ý gì và ai đã xem`], [/^(.+) · David$/, (m, t) => (tr(m[1]) !== m[1] ? `${tr(m[1])} · David` : m[0])],
+  [/^(\d+) of (\d+)$/, (m) => `${m[1]} trên ${m[2]}`],
   [/^(\d+) of (\d+) campaigns active · you choose what goes out and when$/, (m) => `${m[1]} trên ${m[2]} chiến dịch đang bật · bạn quyết định gửi gì và khi nào`],
   [/^(\d+) open · routed by David to each department$/, (m) => `${m[1]} đang mở · David chuyển đến từng bộ phận`],
   [/^(\d+) conversations · (\d+) need you$/, (m) => `${m[1]} cuộc trò chuyện · ${m[2]} cần bạn`],
@@ -237,6 +296,7 @@ const P = [
 function tr(s) {
   if (Object.prototype.hasOwnProperty.call(VI, s)) return VI[s];
   for (const [re, fn] of P) { const m = s.match(re); if (m) return fn(m, tr); }
+  if (s.includes(", ") && !/[.!?]/.test(s)) { const parts = s.split(", "), out = parts.map(tr); if (out.every((x, i) => x !== parts[i])) return out.join(", "); }
   if (s.includes(" · ")) { const parts = s.split(" · "), out = parts.map(tr); if (out.some((x, i) => x !== parts[i])) return out.join(" · "); }
   if (/[.!?] /.test(s)) { const parts = s.match(/[^.!?]+[.!?]+(?:\s+|$)|[^.!?]+$/g); if (parts && parts.length > 1) { const out = parts.map((x) => { const k = x.trim(); return tr(k); }); if (out.some((x, i) => x !== parts[i].trim())) return out.join(" "); } }
   return s;

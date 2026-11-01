@@ -89,18 +89,45 @@ export const channelChoices = { best: "Guest’s preferred channel", whatsapp: "
 export const mergeFields = ["first_name", "arrival_date", "checkout_date", "room", "hotel", "allergy"];
 export const sampleGuest = { first_name: "Elena", arrival_date: "Saturday", checkout_date: "Tuesday", room: "Suite 701", hotel: "The Harbour House", allergy: "no shellfish" };
 
+// Revenue campaigns. Results are sample numbers for the last 30 days, not real sales.
+// Revenue = booked x price. Cost = messages sent x msgCost + booked x cost to deliver. Both are worked out in the app so editing a price changes the results.
+export const msgCost = 0.04;
 export const campaigns = [
-  { id: "k1", name: "Pre-arrival questions", trigger: "before_arrival", days: 3, time: "10:00", audience: "all", channel: "best", mode: "david", on: true,
-    text: "Hi {first_name}, we’re looking forward to {arrival_date}. Is there anything we should know before you arrive, like dietary needs, or a late arrival time? I can pass it to the team so it’s ready." },
-  { id: "k2", name: "Welcome and directions", trigger: "arrival_day", days: 0, time: "09:00", audience: "all", channel: "best", mode: "david", on: true,
-    text: "Good morning {first_name}. Your room at {hotel} is being prepared and check-in opens at 3 pm. If you’re earlier, I can ask the front desk to hold your bags." },
-  { id: "k3", name: "How is it going, 1 to 10", trigger: "during_stay", days: 2, time: "11:30", audience: "all", channel: "best", mode: "david", on: true,
-    text: "Hi {first_name}, how is your stay going so far, from 1 to 10? If anything isn’t right, tell me and I’ll get it fixed today." },
-  { id: "k4", name: "Thanks and a review link", trigger: "after_checkout", days: 1, time: "10:00", audience: "all", channel: "best", mode: "david", on: true,
-    text: "Thank you for staying with us, {first_name}. If you enjoyed it, a short review helps a lot: https://harbourhouse.example/review" },
-  { id: "k5", name: "Come back and stay", trigger: "after_checkout", days: 42, time: "10:00", audience: "returning", channel: "best", mode: "david", on: false,
-    text: "Hi {first_name}, it’s been a few weeks since {hotel}. If you’re planning another trip, I can hold a room for you." },
+  { id: "k1", name: "Pre-arrival upsell", trigger: "before_arrival", days: 3, time: "10:00", audience: "all", channel: "best", mode: "david", on: true,
+    offer: "Ocean-view room upgrade", price: 85, unitCost: 20, stats: { sent: 412, replied: 96, booked: 31 },
+    text: "Hi {first_name}, we’re looking forward to {arrival_date}. An ocean-view room is available for your stay for $85 a night more. Would you like me to book it?" },
+  { id: "k2", name: "In-stay offer", trigger: "during_stay", days: 2, time: "16:00", audience: "all", channel: "best", mode: "david", on: true,
+    offer: "Spa treatment or dinner for two", price: 120, unitCost: 45, stats: { sent: 388, replied: 74, booked: 29 },
+    text: "Hi {first_name}, hope the stay is going well. Tonight we can offer a spa treatment or dinner for two at $120. Shall I book one for you?" },
+  { id: "k3", name: "Post-stay rebooking", trigger: "after_checkout", days: 14, time: "10:00", audience: "returning", channel: "best", mode: "david", on: true,
+    offer: "Direct return stay (first night)", price: 240, unitCost: 30, stats: { sent: 255, replied: 41, booked: 12 },
+    text: "Hi {first_name}, it’s been a couple of weeks since {hotel}. If you’re planning another trip, I can hold a room for you at our direct rate." },
 ];
+// What guests like, in plain tags, and the offers David can pick from. David picks the offer that matches the guest, never an advert for everyone.
+export const tagWhy = {
+  "ocean-view": "booked an ocean-view room before", spa: "enjoys spa treatments", vegetarian: "prefers vegetarian food", coffee: "has an oat flat white most mornings", seafood: "orders seafood",
+  dining: "likes dining out", anniversary: "has an anniversary on file in Opera", transfer: "has used airport transfers", business: "travels for work", "late-checkout": "asks for late check-outs", halal: "eats halal", tea: "likes jasmine tea",
+};
+export const tagLead = {
+  "ocean-view": "you enjoyed an ocean-view room last time", spa: "you enjoy spa treatments", vegetarian: "you prefer vegetarian food", coffee: "you like your oat flat white", seafood: "you enjoy seafood", dining: "you enjoy dining out",
+  anniversary: "you’re celebrating an anniversary", transfer: "you’ve used airport transfers", business: "you’re travelling for work", "late-checkout": "you like a late check-out", halal: "you eat halal", tea: "you like jasmine tea",
+};
+export const offers = [
+  { id: "o1", name: "Ocean-view room upgrade", price: 85, stages: ["pre"], tags: ["ocean-view"], pitch: "an ocean-view room is available for your stay for $85 a night more. Shall I book it?" },
+  { id: "o2", name: "Spa treatment", price: 120, stages: ["stay", "pre"], tags: ["spa"], pitch: "I can book a spa treatment for you at $120. Which evening suits you?" },
+  { id: "o3", name: "Vegetarian dinner for two", price: 95, stages: ["stay", "pre"], tags: ["vegetarian"], pitch: "the chef has a vegetarian tasting dinner for two at $95. Shall I reserve a table?" },
+  { id: "o4", name: "Seafood dinner for two", price: 110, stages: ["stay", "pre"], tags: ["seafood"], soft: ["dining"], avoids: ["shellfish"], pitch: "tonight’s seafood dinner for two is $110. Shall I reserve a table?" },
+  { id: "o5", name: "Halal tasting dinner for two", price: 95, stages: ["stay"], tags: ["halal"], pitch: "the chef has a halal tasting dinner for two at $95. Shall I reserve a table?" },
+  { id: "o6", name: "Anniversary dinner with champagne", price: 140, stages: ["pre", "stay"], tags: ["anniversary"], weight: 2, pitch: "we can set up an anniversary dinner with champagne for $140. Shall I reserve it?" },
+  { id: "o7", name: "Daily oat flat white and breakfast", price: 18, stages: ["stay"], tags: ["coffee"], pitch: "I can add your oat flat white and breakfast to each morning for $18. Shall I set that up?" },
+  { id: "o8", name: "Late check-out to 2 pm", price: 40, stages: ["stay"], tags: ["late-checkout"], pitch: "late check-out to 2 pm is available for $40. Shall I add it?" },
+  { id: "o9", name: "Airport transfer", price: 55, stages: ["pre", "post"], tags: ["transfer", "business"], pitch: "I can book an airport transfer for $55. What time do you need it?" },
+  { id: "o10", name: "Jasmine tea set in the room", price: 22, stages: ["pre", "stay"], tags: ["tea"], pitch: "I can have a jasmine tea set waiting in your room for $22. Shall I arrange it?" },
+  { id: "o11", name: "Direct return stay (first night)", price: 240, stages: ["post"], tags: [], pitch: "if you’re planning another trip, I can hold a room for you at our direct rate." },
+  { id: "o0", name: "Ocean-view room upgrade", price: 85, stages: ["pre"], tags: [], generic: true, pitch: "an ocean-view room is available for your stay for $85 a night more. Shall I book it?" },
+];
+export const stageOf = { arriving: ["pre"], inhouse: ["stay"], departing: ["stay", "post"] };
+
 export const rulesDefault = { quietStart: "21:00", quietEnd: "08:00", perDay: 1 };
 
 export const channels = [
@@ -127,31 +154,31 @@ const LABEL = { ok: "Synced", pend: "Awaiting approval", review: "Needs review" 
 let _f = 0;
 const f = (field, opera, david, dir, st, tip = "") => ({ id: "f" + ++_f, field, opera, david, dir, st, label: LABEL[st], tip });
 export const guests = [
-  { id: "g-elena", name: "Elena Vasquez", room: "Suite 701", status: "arriving", when: "Arriving 13:30", tier: "Gold", stays: 3, ch: ["WhatsApp", "Messenger", "SMS"], phone: "+44 7700 900418", opera: "#00481726", conv: "c5", fields: guestFields.map((x) => ({ ...x })) },
-  { id: "g-marcus", name: "Marcus Bell", room: "Room 608", status: "inhouse", when: "In house · to 1 Nov", tier: "Gold", stays: 11, ch: ["WhatsApp"], phone: "+44 7700 900611", opera: "#00392214", conv: "c1", fields: [
+  { id: "g-elena", name: "Elena Vasquez", room: "Suite 701", status: "arriving", when: "Arriving 13:30", tier: "Gold", stays: 3, ch: ["WhatsApp", "Messenger", "SMS"], phone: "+44 7700 900418", opera: "#00481726", likes: ["ocean-view", "spa", "vegetarian", "dining"], allergies: ["shellfish"], conv: "c5", fields: guestFields.map((x) => ({ ...x })) },
+  { id: "g-marcus", name: "Marcus Bell", room: "Room 608", status: "inhouse", when: "In house · to 1 Nov", tier: "Gold", stays: 11, ch: ["WhatsApp"], phone: "+44 7700 900611", opera: "#00392214", likes: ["coffee", "business"], allergies: [], conv: "c1", fields: [
     f("Phone", "+44 7700 900118", "+44 7700 900611 · messages from WhatsApp", "Opera ⇄ David", "review", "The number he writes from differs from Opera. Staff decide which to keep."),
     f("Breakfast", "", "Oat flat white most mornings", "David → Opera", "pend", "Noticed from six room-service orders."),
     f("Pillows", "Firm", "Firm", "Opera ⇄ David", "ok"), f("Room", "Quiet floor", "Quiet floor, away from the lift", "Opera ⇄ David", "ok")] },
-  { id: "g-priya", name: "Priya Nair", room: "Room 412", status: "departing", when: "Departing today", tier: "Silver", stays: 3, ch: ["SMS"], phone: "+44 7700 900233", opera: "#00455781", conv: "c2", fields: [
+  { id: "g-priya", name: "Priya Nair", room: "Room 412", status: "departing", when: "Departing today", tier: "Silver", stays: 3, ch: ["SMS"], phone: "+44 7700 900233", opera: "#00455781", likes: ["late-checkout", "spa"], allergies: [], conv: "c2", fields: [
     f("Late check-out", "", "Asked for 2 pm today", "David → Opera", "pend", "Waiting on the front desk to confirm."),
     f("Contact", "", "Prefers texts to calls", "David → Opera", "pend"), f("Pillows", "Soft", "Soft", "Opera ⇄ David", "ok"), f("Allergy", "None on file", "None mentioned", "Opera ⇄ David", "ok")] },
-  { id: "g-tom", name: "Tom Hadley", room: "Room 305", status: "inhouse", when: "In house · to 31 Oct", tier: "Gold", stays: 14, ch: ["iMessage"], phone: "+44 7700 900812", opera: "#00311902", conv: "c3", fields: [
+  { id: "g-tom", name: "Tom Hadley", room: "Room 305", status: "inhouse", when: "In house · to 31 Oct", tier: "Gold", stays: 14, ch: ["iMessage"], phone: "+44 7700 900812", opera: "#00311902", likes: ["coffee", "seafood"], allergies: [], conv: "c3", fields: [
     f("Coffee", "", "Oat flat white, mornings, six times", "David → Opera", "pend", "Offered as a question, never assumed."),
     f("Pillows", "Firm", "Firm", "Opera ⇄ David", "ok"), f("Room", "High floor", "High floor", "Opera ⇄ David", "ok"), f("Allergy", "None on file", "None mentioned", "Opera ⇄ David", "ok")] },
-  { id: "g-ana", name: "Ana Souza", room: "Room 221", status: "inhouse", when: "In house · to 2 Nov", tier: "Member", stays: 1, ch: ["WhatsApp"], phone: "+55 11 91234 5678", opera: "#00502933", conv: "c4", fields: [
+  { id: "g-ana", name: "Ana Souza", room: "Room 221", status: "inhouse", when: "In house · to 2 Nov", tier: "Member", stays: 1, ch: ["WhatsApp"], phone: "+55 11 91234 5678", opera: "#00502933", likes: ["spa"], allergies: ["feather"], conv: "c4", fields: [
     f("Allergy", "", "Feather and down, told David tonight", "David → Opera", "review", "Allergies are never written without a person checking."),
     f("Pillows", "", "Hypoallergenic", "David → Opera", "pend"), f("Language", "Portuguese", "Portuguese", "Opera ⇄ David", "ok")] },
-  { id: "g-james", name: "James Okafor", room: "Suite 702", status: "arriving", when: "Arriving 14:00", tier: "Silver", stays: 2, ch: ["WhatsApp"], phone: "+234 802 555 0191", opera: "#00478845", conv: "c6", fields: [
+  { id: "g-james", name: "James Okafor", room: "Suite 702", status: "arriving", when: "Arriving 14:00", tier: "Silver", stays: 2, ch: ["WhatsApp"], phone: "+234 802 555 0191", opera: "#00478845", likes: ["anniversary", "dining", "ocean-view"], allergies: [], conv: "c6", fields: [
     f("Dinner", "", "Table for two, Tuesday 7:30 pm", "David → Opera", "pend"), f("Occasion", "Anniversary, 3 Nov", "Anniversary, 3 Nov", "Opera ⇄ David", "ok"), f("Allergy", "None on file", "None mentioned", "Opera ⇄ David", "ok")] },
-  { id: "g-lukas", name: "Lukas Brandt", room: "Room 514", status: "arriving", when: "Arriving 22:30", tier: "Member", stays: 1, ch: ["SMS"], phone: "+49 151 5550 144", opera: "#00511208", conv: null, fields: [
+  { id: "g-lukas", name: "Lukas Brandt", room: "Room 514", status: "arriving", when: "Arriving 22:30", tier: "Member", stays: 1, ch: ["SMS"], phone: "+49 151 5550 144", opera: "#00511208", likes: ["transfer", "business"], allergies: [], conv: null, fields: [
     f("Arrival time", "15:15", "22:30 · night desk alerted", "David → Opera", "pend", "He told David his flight is late."), f("Language", "German", "German, speaks English", "Opera ⇄ David", "ok"), f("Allergy", "None on file", "None mentioned", "Opera ⇄ David", "ok")] },
-  { id: "g-mei", name: "Mei Tanaka", room: "Room 612", status: "arriving", when: "Arriving 16:00", tier: "Gold", stays: 4, ch: ["WhatsApp", "iMessage"], phone: "+81 90 5550 7712", opera: "#00288401", conv: null, fields: [
+  { id: "g-mei", name: "Mei Tanaka", room: "Room 612", status: "arriving", when: "Arriving 16:00", tier: "Gold", stays: 4, ch: ["WhatsApp", "iMessage"], phone: "+81 90 5550 7712", opera: "#00288401", likes: ["spa", "tea", "ocean-view"], allergies: [], conv: null, fields: [
     f("Tea", "", "Jasmine tea on arrival", "David → Opera", "pend"), f("Room", "High floor", "High floor, firm pillows", "Opera ⇄ David", "ok"), f("Stays", "4", "4th stay", "Opera → David", "ok")] },
-  { id: "g-wei", name: "Wei Chen", room: "Room 517", status: "inhouse", when: "In house · to 3 Nov", tier: "Silver", stays: 2, ch: ["Messenger"], phone: "+86 138 5550 2231", opera: "#00493377", conv: null, fields: [
+  { id: "g-wei", name: "Wei Chen", room: "Room 517", status: "inhouse", when: "In house · to 3 Nov", tier: "Silver", stays: 2, ch: ["Messenger"], phone: "+86 138 5550 2231", opera: "#00493377", likes: ["halal", "dining"], allergies: [], conv: null, fields: [
     f("Laundry", "", "Shirts, back by Sunday", "David → Opera", "pend"), f("Diet", "Halal", "Halal", "Opera ⇄ David", "ok"), f("Room", "Low floor", "Low floor", "Opera ⇄ David", "ok")] },
-  { id: "g-hannah", name: "Hannah Cole", room: "Room 226", status: "inhouse", when: "In house · to 1 Nov", tier: "Member", stays: 1, ch: ["Messenger"], phone: "+44 7700 900764", opera: "#00518890", conv: null, fields: [
+  { id: "g-hannah", name: "Hannah Cole", room: "Room 226", status: "inhouse", when: "In house · to 1 Nov", tier: "Member", stays: 1, ch: ["Messenger"], phone: "+44 7700 900764", opera: "#00518890", likes: [], allergies: [], conv: null, fields: [
     f("Accessibility", "Step-free access", "Step-free access", "Opera ⇄ David", "ok"), f("Maintenance", "", "Shower drain slow, work order raised", "David → Opera", "pend"), f("Room", "Away from the lift", "Away from the lift", "Opera ⇄ David", "ok")] },
-  { id: "g-noah", name: "Noah Adler", room: "Room 403", status: "departing", when: "Departing 1 Nov", tier: "Silver", stays: 6, ch: ["SMS"], phone: "+1 647 555 0178", opera: "#00352240", conv: null, fields: [
+  { id: "g-noah", name: "Noah Adler", room: "Room 403", status: "departing", when: "Departing 1 Nov", tier: "Silver", stays: 6, ch: ["SMS"], phone: "+1 647 555 0178", opera: "#00352240", likes: ["business", "late-checkout"], allergies: [], conv: null, fields: [
     f("Do not disturb", "", "Until 11 am every day", "David → Opera", "pend"), f("Pillows", "Standard", "Standard", "Opera ⇄ David", "ok"), f("Allergy", "None on file", "None mentioned", "Opera ⇄ David", "ok")] },
 ];
 
@@ -177,6 +204,24 @@ export const connections = [
 ];
 
 // ---- Team: every employee has a profile with a Zalo number (fictional numbers) ----
+// Target minutes to get a request done, by department. A task past its due time shows as overdue and the duty manager is told.
+export const sla = { Maintenance: 30, Housekeeping: 15, "Room service": 25, "Front desk": 30, Laundry: 120, Restaurant: 60 };
+// What a guest might write, and the task David creates from it. First match wins.
+export const intents = [
+  [/towel|pillow|blanket|sheets|toiletr|housekeep|clean my room/i, "Housekeeping", (m) => (/pillow/i.test(m) ? "Extra pillows" : /blanket/i.test(m) ? "Extra blanket" : "Extra towels")],
+  [/table|reservation|reserve|book (a )?(dinner|lunch|restaurant)/i, "Restaurant", () => "Table reservation"],
+  [/airport|taxi|transfer|pick ?up|cab\b/i, "Front desk", () => "Airport transfer"],
+  [/laundry|iron|dry.?clean|shirts?/i, "Laundry", () => "Laundry pickup"],
+  [/broken|not working|air.?con|a\/c|leak|drain|light.*(out|flicker)|tv\b|heating|too (hot|cold)/i, "Maintenance", (m) => m.trim().slice(0, 60)],
+  [/room service|order|coffee|breakfast|food|hungry|sandwich/i, "Room service", (m) => m.trim().slice(0, 60)],
+];
+
+// Marketing consent per guest, as recorded. A guest without it never receives a campaign.
+export const consentSeed = {
+  "g-elena": [true, "Booking form", "12 Oct"], "g-marcus": [true, "Opera profile", "2 Mar"], "g-priya": [true, "Booking form", "20 Oct"], "g-tom": [true, "Opera profile", "14 Jan"], "g-ana": [true, "Booking form", "18 Oct"],
+  "g-james": [true, "Booking form", "9 Oct"], "g-lukas": [false, "Never asked", ""], "g-mei": [true, "Opera profile", "5 Jun"], "g-wei": [true, "Booking form", "25 Oct"], "g-hannah": [false, "Replied STOP", "28 Oct"], "g-noah": [true, "Opera profile", "11 Feb"],
+};
+
 export const departments = ["Maintenance", "Housekeeping", "Room service", "Front desk", "Laundry", "Restaurant"];
 export const team = [
   { id: "t1", group: "optional", name: "Maya Reyes", role: "Duty manager", dept: "Front desk", zalo: "+84905550101", lang: "English", consent: true, onShift: true },

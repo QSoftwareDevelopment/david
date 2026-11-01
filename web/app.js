@@ -13,21 +13,31 @@ const ICON = {
   megaphone: '<path d="M3 11v2a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M16 9a4 4 0 0 1 0 6"/>',
   plug: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
   arrows: '<path d="M17 3l4 4-4 4"/><path d="M3 7h18"/><path d="M7 21l-4-4 4-4"/><path d="M21 17H3"/>',
+  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   brain: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M18 17l.8 2.2L21 20l-2.2.8L18 23l-.8-2.2L15 20l2.2-.8z"/>',
   check: '<circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/>',
 };
 const icon = (n) => `<svg viewBox="0 0 24 24">${ICON[n]}</svg>`;
 
 const PAGES = [
-  ["today", "Today", "home"], ["inbox", "Inbox", "chat"], ["requests", "Requests", "tray"], ["guests", "Guests", "users"], ["campaigns", "Campaigns", "megaphone"],
-  "Connected", ["opera", "Opera sync", "plug"], ["channels", "Channels", "arrows"], ["brain", "David’s brain", "brain"],
+  ["today", "Today", "home"], ["inbox", "Inbox", "chat"], ["requests", "Requests", "tray"], ["guests", "Guests", "users"], ["campaigns", "Revenue campaigns", "megaphone"],
+  "Setup", ["opera", "Opera sync", "plug"], ["channels", "Channels", "arrows"], ["brain", "David’s brain", "brain"], ["privacy", "Privacy and access", "lock"],
 ];
 
 /* ---------- state, saved in the browser ---------- */
-const KEY = "david-console-v4";
+const KEY = "david-console-v5";
+/* Who can see what. In the real product this comes from each person's login; here you switch role at the bottom left. */
+const ROLES = {
+  manager: { label: "Duty manager", who: "Maya Reyes", pages: ["today", "inbox", "requests", "guests", "campaigns", "opera", "channels", "brain", "privacy"], phone: true, manage: true },
+  frontdesk: { label: "Front desk", who: "Omar Haddad", pages: ["today", "inbox", "requests", "guests"], phone: true },
+  housekeeping: { label: "Housekeeping", who: "Dana Kowalski", pages: ["requests"], phone: false },
+  marketing: { label: "Marketing", who: "Marketing lead", pages: ["guests", "campaigns", "privacy"], phone: false },
+};
 const S = {
   range: "week", assignee: "All", reqFilter: "All", autoReply: true, notesTab: "opera",
-  convo: "c1", extra: {}, takeover: {},
+  convo: "c1", extra: {}, takeover: {}, clock: 645, role: "manager", retention: 24, dsr: [],
+  consent: Object.fromEntries(Object.entries(D.consentSeed).map(([k, v]) => [k, { on: v[0], source: v[1], date: v[2] }])),
+  access: [{ t: "09:12", who: "Omar Haddad · Front desk", act: "Viewed guest profile", tgt: "Marcus Bell" }, { t: "09:31", who: "Maya Reyes · Duty manager", act: "Opened conversation", tgt: "Priya Nair" }, { t: "09:48", who: "Dana Kowalski · Housekeeping", act: "Opened request", tgt: "Two extra pillows, hypoallergenic" }, { t: "10:05", who: "Maya Reyes · Duty manager", act: "Changed campaign", tgt: "In-stay offer" }],
   requests: D.requests.map((r) => ({ ...r, log: [{ t: r.opened, kind: "created", text: `Logged by David from ${r.ch}` }, ...(r.to ? [{ t: r.opened, kind: "assigned", text: `Assigned to ${(D.team.find((x) => x.id === r.to) || {}).name}` }] : [])] })), conflict: "open", events: D.events.map((e) => [...e]),
   campaigns: D.campaigns.map((c) => ({ ...c })), rules: { ...D.rulesDefault },
   chans: D.channels.map((c) => ({ ...c, on: true })), knowledge: D.knowledge.map((k) => ({ ...k })),
@@ -38,7 +48,7 @@ const S = {
   guestTpl: { assign: "Hi {guest}, {staff} from {dept} is on this now. I’ll let you know as soon as it’s done.", done: "Hi {guest}, {staff} has taken care of it: {request}. If anything is not right, just tell me." },
   api: { preset: 0, method: "POST", path: "/v1/requests", key: D.apiKeysSeed[0].secret, body: "", res: null },
 };
-const PERSIST = ["requests", "conflict", "campaigns", "rules", "chans", "knowledge", "conns", "guests", "guest", "qa", "extra", "takeover", "team", "autoAssign", "zaloOn", "zaloLog", "apiKeys", "tellGuest", "guestTpl"];
+const PERSIST = ["role", "retention", "dsr", "consent", "access", "clock", "requests", "conflict", "campaigns", "rules", "chans", "knowledge", "conns", "guests", "guest", "qa", "extra", "takeover", "team", "autoAssign", "zaloOn", "zaloLog", "apiKeys", "tellGuest", "guestTpl"];
 try { const raw = localStorage.getItem(KEY); if (raw) Object.assign(S, JSON.parse(raw)); } catch { /* private mode: run unsaved */ }
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(PERSIST.map((k) => [k, S[k]])))); } catch { /* ignore */ } };
 
@@ -46,6 +56,19 @@ const G = (id) => D.guests.find((g) => g.id === id) || D.guests[0];
 const gFields = (id) => (S.guests.find((x) => x.id === id) || S.guests[0]).fields;
 const allFields = () => S.guests.flatMap((g) => g.fields);
 const openCount = () => S.requests.filter((r) => r.st !== "done").length;
+/* Due times: each department has a target, a task past it is overdue, and the duty manager is told. */
+const hhmm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const can = (p) => ROLES[S.role].pages.includes(p);
+const audit = (act, tgt) => { S.access.unshift({ t: now().slice(0, 5), who: `${ROLES[S.role].who} · ${ROLES[S.role].label}`, act, tgt }); S.access.length = Math.min(S.access.length, 200); };
+const ph = (n) => (ROLES[S.role].phone || !n ? n : String(n).replace(/\d(?=(?:\D*\d){2})/g, "•"));
+const maskF = (f, v) => (f.field === "Phone" || f.field === "Contact" ? ph(v) : v);
+const consentOf = (id) => S.consent[id] || { on: false, source: "Never asked", date: "" };
+const dueMin = (r) => mins(r.opened) + (D.sla[r.dept] || 30);
+const overdueBy = (r) => (r.st === "done" ? 0 : Math.max(0, S.clock - dueMin(r)));
+function dueCell(r) {
+  if (r.st === "done") return r.doneAt ? `<span class="small" style="color:${mins(r.doneAt) <= dueMin(r) ? "var(--green)" : "var(--clay)"}">Done ${r.doneAt} · ${mins(r.doneAt) <= dueMin(r) ? "on time" : "late"}</span>` : '<span class="small">Done</span>';
+  const o = overdueBy(r); return o ? `<span class="pill review">Overdue ${o} min</span>` : `<span class="mono">Due ${hhmm(dueMin(r))}</span>`;
+}
 const needsCount = (id) => gFields(id).filter((f) => f.st !== "ok").length;
 
 function answerFor(q) {
@@ -58,8 +81,9 @@ if (!S.qa.length) S.qa = ["What time is check-out on Sunday?", "Can I bring my d
 const SUB = {
   today: () => `${D.hotel.date} · ${D.hotel.name}`, inbox: () => "Every channel in one place", requests: () => `${openCount()} open · routed by David to each department`,
   guests: () => { const g = G(S.guest); return `${g.room} · ${g.when} · ${g.stays === 1 ? "first stay" : g.stays + " stays"} · OPERA profile ${g.opera}`; },
-  campaigns: () => `${S.campaigns.filter((c) => c.on).length} of ${S.campaigns.length} campaigns active · you choose what goes out and when`,
+  campaigns: () => { const t = revTotals(); return `${money(t.revenue)} extra revenue and ${money(t.net)} net profit in the last 30 days · sample data`; },
   opera: () => "OPERA Cloud property link · two-way, with a person approving what goes back", channels: () => "Where guests already write, and the numbers David answers from",
+  privacy: () => `${ROLES[S.role].label} view · who can see guest data, what guests agreed to, and who has looked`,
   brain: () => `What David is connected to, what he knows about ${D.hotel.name}, and how he behaves`,
 };
 const TITLE = { guests: () => G(S.guest).name };
@@ -107,6 +131,31 @@ function whenText(c) {
     occasion: `${plural(n, "day")} before the occasion, ${t}` }[c.trigger] || t;
 }
 const jday = (c) => { const n = Number(c.days) || 0; return { before_arrival: -n, arrival_day: 0, during_stay: n, after_checkout: 3 + n, after_booking: -14 + n, occasion: -n }[c.trigger] ?? 0; };
+const money = (n) => (n < 0 ? "-" : "") + "$" + Math.abs(Math.round(n)).toLocaleString("en-US");
+const pc = (a, b) => (b ? (Math.round((a / b) * 1000) / 10).toFixed(1).replace(/\.0$/, "") : "0") + "%";
+function revOf(c) {
+  const s = c.stats, price = Number(c.price) || 0, unit = Number(c.unitCost) || 0, revenue = s.booked * price, msg = s.sent * D.msgCost, deliver = s.booked * unit, cost = msg + deliver;
+  return { ...s, revenue, msg, deliver, cost, net: revenue - cost };
+}
+function revTotals() {
+  const r = S.campaigns.map(revOf), sum = (k) => r.reduce((t, x) => t + x[k], 0);
+  return { sent: sum("sent"), replied: sum("replied"), booked: sum("booked"), revenue: sum("revenue"), cost: sum("cost"), net: sum("net") };
+}
+// Pick the offer that matches this guest. Returns the offer, the reason in plain words, and anything skipped on purpose.
+function recommend(g) {
+  const stages = D.stageOf[g.status] || ["pre"], skipped = [];
+  let best = null;
+  D.offers.filter((o) => !o.generic && o.stages.some((s) => stages.includes(s))).forEach((o) => {
+    const bad = (o.avoids || []).find((x) => g.allergies.includes(x));
+    const hits = o.tags.filter((t) => g.likes.includes(t)), soft = (o.soft || []).filter((t) => g.likes.includes(t)), score = (hits.length + soft.length * 0.5) * (o.weight || 1);
+    if (bad) { if (hits.length || soft.length) skipped.push(`${o.name} (${bad} allergy)`); return; }
+    if (score && (!best || score > best.score)) best = { o, hits: hits.length ? hits : soft, score };
+  });
+  if (best) return { offer: best.o, why: best.hits.map((t) => D.tagWhy[t]).join(" and "), hits: best.hits, skipped };
+  const fb = stages.includes("post") && !stages.includes("pre") ? D.offers.find((o) => o.stages.length === 1 && o.stages[0] === "post") : D.offers.find((o) => o.generic);
+  return { offer: fb, why: "No preferences on file yet, so the standard offer", hits: [], skipped };
+}
+const offerMsg = (g, r) => `Hi ${g.name.split(" ")[0]}, ${r.hits.length ? `since ${D.tagLead[r.hits[0]]}, ` : ""}${r.offer.pitch}`;
 const fill = (txt) => String(txt || "").replace(/\{(\w+)\}/g, (m, k) => D.sampleGuest[k] ?? m);
 function campWarnings(d) {
   const w = [];
@@ -127,9 +176,9 @@ function journey() {
 
 /* ---------- views ---------- */
 function requestRows(list, compact) {
-  return list.map((r) => `<tr class="click" data-a="openReq" data-id="${r.id}" tabindex="0"><td>${esc(r.dept)}</td><td class="num">${esc(r.room)}</td><td class="ask"><b>${esc(r.ask)}</b><span class="small">${esc(r.guest)}</span></td><td>${chip(r.ch)}</td>${compact ? "" : `<td class="mono">${r.opened}</td><td>${assignCell(r)}</td>`}<td><button class="pill ${ST[r.st][0]}" data-a="cycle" data-id="${r.id}" title="Click to move this request along">${ST[r.st][1]}</button></td></tr>`).join("");
+  return list.map((r) => `<tr class="click" data-a="openReq" data-id="${r.id}" tabindex="0"><td>${esc(r.dept)}</td><td class="num">${esc(r.room)}</td><td class="ask"><b>${esc(r.ask)}</b><span class="small">${esc(r.guest)}${r.auto ? " · created by David" : ""}</span></td><td>${chip(r.ch)}</td>${compact ? "" : `<td class="mono">${r.opened}</td><td>${dueCell(r)}</td><td>${assignCell(r)}</td>`}<td><button class="pill ${ST[r.st][0]}" data-a="cycle" data-id="${r.id}" title="Click to move this request along">${ST[r.st][1]}</button></td></tr>`).join("");
 }
-const reqTable = (list, compact = false) => `<table class="t"><thead><tr><th>Department</th><th>Room</th><th>Request</th><th>Channel</th>${compact ? "" : "<th>Opened</th><th>Assigned</th>"}<th>Status</th></tr></thead><tbody>${requestRows(list, compact)}</tbody></table>`;
+const reqTable = (list, compact = false) => `<table class="t"><thead><tr><th>Department</th><th>Room</th><th>Request</th><th>Channel</th>${compact ? "" : "<th>Opened</th><th>Due</th><th>Assigned</th>"}<th>Status</th></tr></thead><tbody>${requestRows(list, compact)}</tbody></table>`;
 
 function today() {
   const R = D.ranges[S.range], open = openCount(), list = S.requests.filter((r) => S.assignee === "All" || S.assignee === (r.to || "none")).filter((r) => r.st !== "done").slice(0, 6);
@@ -142,7 +191,7 @@ function today() {
     <span class="sp"></span><span class="small" style="color:var(--ink)">David replies automatically</span>
     <button class="switch" role="switch" aria-checked="${S.autoReply}" data-a="auto" aria-label="David replies automatically"></button>
   </div>
-  <div class="row kpis">${[["Arriving today", "24", "▲ 8%", 0, "9 answered pre-arrival"], ["In house", "112", "▲ 3%", 0, "78% occupancy"], ["Open requests", String(open), "▼ 12%", 0, "Longest wait 11 min"], ["Messages", "186", "▲ 21%", 0, "92% handled by David"], ["Guest rating", "9.1", "▲ 4%", 0, "From 63 check-ins"]].map(kpi).join("")}</div>
+  <div class="row kpis">${[["Arriving today", "24", "▲ 8%", 0, "9 answered pre-arrival"], ["In house", "112", "▲ 3%", 0, "78% occupancy"], ["Open requests", String(open), "▼ 12%", 0, "Longest wait 11 min"], ["Messages", "186", "▲ 21%", 0, "92% handled by David"], (can("campaigns") ? ["Extra revenue", money(revTotals().revenue), "30 days", 0, `${money(revTotals().net)} net after costs`] : ["Overdue tasks", String(S.requests.filter((r) => overdueBy(r) > 0).length), "past their due time", 1, "the duty manager is told"])].map(kpi).join("")}</div>
   <div class="row cols3">
     <div class="card"><div class="hd"><div><h2>Messages</h2><div class="small sub">${R.note}</div></div><div class="legend"><span><i style="background:#1D4A3F"></i>David</span><span><i style="background:#B8CDC5"></i>Staff</span></div></div><div class="bd">${barChart(R.bars)}</div></div>
     <div class="card"><div class="hd"><div><h2>Occupancy</h2><div class="small sub">Rooms sold, percent</div></div></div><div class="bd">${lineChart(R.occ)}</div></div>
@@ -171,14 +220,15 @@ function inbox() {
   ${D.convos.map((x) => `<button class="convo ${x.id === S.convo ? "on" : ""}" data-a="convo" data-id="${x.id}"><span class="avatar" style="${x.unread ? "background:var(--clay-soft);color:var(--clay)" : ""}">${initials(x.name)}</span><div class="grow" style="min-width:0;flex:1"><div class="top2"><span>${esc(x.name)} · ${esc(x.room.replace("Room ", ""))}</span><span class="small">${x.time}</span></div><div class="small" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.prev)}</div><div style="margin-top:6px">${chip(x.ch)}</div></div></button>`).join("")}</section>
   <section class="thread"><div style="display:flex;justify-content:space-between;align-items:center;padding:14px 28px;background:var(--surface);border-bottom:1px solid var(--rule)"><div><h2>${esc(c.name)}</h2><div class="small">${c.room} · ${c.tier} · linked to Opera</div></div><div style="display:flex;gap:10px;align-items:center">${chip(c.ch)}<button class="btn sm ${tk ? "primary" : ""}" data-a="takeover">${tk ? "Hand back to David" : "Take over from David"}</button></div></div>
   <div class="msgs" id="msgs">${msgs}</div>
-  <form class="compose" data-a="send"><input id="reply" placeholder="${tk ? "Reply as staff…" : "David is handling this. Take over to reply as staff"}" ${tk ? "" : "disabled"} autocomplete="off"><button class="btn primary" ${tk ? "" : "disabled"}>Send as staff</button></form></section>
+  <form class="compose" data-a="send"><input id="reply" placeholder="${tk ? "Reply as staff…" : "David is handling this. Take over to reply as staff"}" ${tk ? "" : "disabled"} autocomplete="off"><button class="btn primary" ${tk ? "" : "disabled"}>Send as staff</button></form>
+  <form class="compose" data-a="asGuest" style="border-top:0;padding-top:0"><input id="gsim" placeholder="Demo: type as ${esc(c.name.split(" ")[0])}, e.g. “Could we get extra towels?”" autocomplete="off"><button class="btn">Send as guest</button></form></section>
   <section class="profile"><div style="display:flex;justify-content:space-between"><span class="label">Guest profile</span>${pill("ok", "Opera")}</div>${c.profile.map(([k, v]) => `<div class="field"><span class="label">${k}</span><span>${esc(v)}</span></div>`).join("")}<div class="note"><span class="label" style="color:var(--green)">Written back to Opera</span><span class="small" style="color:var(--ink)">Work order #44821 · Preference note awaiting your approval.</span></div></section></div>`;
 }
 
 function requests() {
   const depts = ["All", ...new Set(D.requests.map((r) => r.dept))];
   const list = S.requests.filter((r) => (S.reqFilter === "All" || r.dept === S.reqFilter) && (S.assignee === "All" || S.assignee === (r.to || "none")));
-  return `<div class="toolbar"><div style="display:flex;gap:8px;flex-wrap:wrap">${depts.map((d) => `<button class="btn sm ${S.reqFilter === d ? "primary" : ""}" style="border-radius:999px" data-a="dept" data-v="${d}">${d} ${d === "All" ? S.requests.length : S.requests.filter((r) => r.dept === d).length}</button>`).join("")}</div><span class="sp"></span><span class="small" style="color:var(--ink)">Tell guests automatically</span><button class="switch" role="switch" aria-checked="${S.tellGuest}" data-a="tellGuest" aria-label="Tell guests automatically"></button>${assigneeSelect()}</div>
+  return `<div class="toolbar"><div style="display:flex;gap:8px;flex-wrap:wrap">${depts.map((d) => `<button class="btn sm ${S.reqFilter === d ? "primary" : ""}" style="border-radius:999px" data-a="dept" data-v="${d}">${d} ${d === "All" ? S.requests.length : S.requests.filter((r) => r.dept === d).length}</button>`).join("")}</div><span class="sp"></span><span class="small" title="Demo only: move time forward to see overdue tasks">Demo time ${hhmm(S.clock)}</span><button class="btn sm" data-a="tick">+15 min</button><span class="small" style="color:var(--ink)">Tell guests automatically</span><button class="switch" role="switch" aria-checked="${S.tellGuest}" data-a="tellGuest" aria-label="Tell guests automatically"></button>${assigneeSelect()}</div>
   <div class="card">${list.length ? reqTable(list) : '<div class="empty">No requests match.</div>'}</div>`;
 }
 
@@ -188,7 +238,7 @@ function dirRows() {
   const list = D.guests.filter((g) => (S.guestF === "all" || g.status === S.guestF) && (!q || `${g.name} ${g.room}`.toLowerCase().includes(q)));
   if (!list.length) return '<tr><td colspan="7" class="empty">No guests match.</td></tr>';
   const stPill = { arriving: pill("pend", "Arriving"), inhouse: pill("ok", "In house"), departing: '<span class="chip im">Departing</span>' };
-  return list.map((g) => { const n = needsCount(g.id); return `<tr class="${g.id === S.guest ? "sel" : ""}" data-a="pickGuest" data-id="${g.id}" tabindex="0"><td><div class="nm"><span class="avatar">${initials(g.name)}</span><div><div>${esc(g.name)}</div><div class="small">${esc(g.room)}</div></div></div></td><td>${stPill[g.status]}<div class="small" style="margin-top:3px">${esc(g.when)}</div></td><td>${g.tier}<div class="small">${g.stays === 1 ? "First stay" : g.stays + " stays"}</div></td><td><div style="display:flex;gap:4px;flex-wrap:wrap">${g.ch.map(chip).join("")}</div></td><td class="mono">${esc(g.phone)}</td><td>${n ? pill("review", n + " need you") : pill("ok", "All synced")}</td><td>${g.conv ? `<button class="btn sm" data-a="openChat" data-id="${g.conv}">Open chat</button>` : ""}</td></tr>`; }).join("");
+  return list.map((g) => { const n = needsCount(g.id); return `<tr class="${g.id === S.guest ? "sel" : ""}" data-a="pickGuest" data-id="${g.id}" tabindex="0"><td><div class="nm"><span class="avatar">${initials(g.name)}</span><div><div>${esc(g.name)}</div><div class="small">${esc(g.room)}</div></div></div></td><td>${stPill[g.status]}<div class="small" style="margin-top:3px">${esc(g.when)}</div></td><td>${g.tier}<div class="small">${g.stays === 1 ? "First stay" : g.stays + " stays"}</div></td><td><div style="display:flex;gap:4px;flex-wrap:wrap">${g.ch.map(chip).join("")}</div></td><td class="mono">${esc(ph(g.phone))}</td><td>${n ? pill("review", n + " need you") : pill("ok", "All synced")}</td><td>${g.conv ? `<button class="btn sm" data-a="openChat" data-id="${g.conv}">Open chat</button>` : ""}</td></tr>`; }).join("");
 }
 function guests() {
   const g = G(S.guest), order = { review: 0, pend: 1, ok: 2 };
@@ -196,8 +246,9 @@ function guests() {
   const shown = S.fieldsOpen ? sorted : sorted.slice(0, 2), pending = sorted.filter((f) => f.st !== "ok").length, hidden = sorted.length - shown.length;
   const counts = { all: D.guests.length, arriving: 0, inhouse: 0, departing: 0 }; D.guests.forEach((x) => counts[x.status]++);
   return `<div class="card"><div class="hd"><div><h2>Opera and David, field by field</h2><div class="small sub">${esc(g.name)} · Opera stays the record. David adds what guests tell him and proposes it back for your approval.</div></div><div style="display:flex;gap:10px"><button class="btn" data-a="review">Review ${pending} write-back${pending === 1 ? "" : "s"}</button><button class="btn primary" data-a="approveAll" ${pending ? "" : "disabled"}>Approve all</button></div></div>
-  <table class="t"><thead><tr><th>Field</th><th>In Opera</th><th>What David knows</th><th>Direction</th><th>Status</th></tr></thead><tbody>${shown.map((f) => `<tr><td>${esc(f.field)}${f.tip ? ` <span class="small" title="${esc(f.tip)}" style="cursor:help;border:1px solid var(--rule);border-radius:50%;padding:0 5px;font-size:11px">i</span>` : ""}</td><td style="${f.opera ? "" : "color:var(--mute)"}">${esc(f.opera || "Not recorded")}</td><td>${esc(f.david)}</td><td class="mono">${f.dir}</td><td style="display:flex;gap:8px;align-items:center">${pill(f.st, f.label)}${f.st !== "ok" ? `<button class="btn sm" data-a="approve" data-id="${f.id}">Approve</button>` : ""}</td></tr>`).join("")}</tbody></table>
+  <table class="t"><thead><tr><th>Field</th><th>In Opera</th><th>What David knows</th><th>Direction</th><th>Status</th></tr></thead><tbody>${shown.map((f) => `<tr><td>${esc(f.field)}${f.tip ? ` <span class="small" title="${esc(f.tip)}" style="cursor:help;border:1px solid var(--rule);border-radius:50%;padding:0 5px;font-size:11px">i</span>` : ""}</td><td style="${f.opera ? "" : "color:var(--mute)"}">${esc(maskF(f, f.opera) || "Not recorded")}</td><td>${esc(maskF(f, f.david))}</td><td class="mono">${f.dir}</td><td style="display:flex;gap:8px;align-items:center">${pill(f.st, f.label)}${f.st !== "ok" ? `<button class="btn sm" data-a="approve" data-id="${f.id}">Approve</button>` : ""}</td></tr>`).join("")}</tbody></table>
   ${sorted.length > 2 ? `<button class="more" data-a="fields" aria-expanded="${S.fieldsOpen}">${S.fieldsOpen ? "Show fewer fields" : `Show ${hidden} more field${hidden === 1 ? "" : "s"}`}</button>` : ""}</div>
+  ${(() => { const g = G(S.guest), r = recommend(g); return `<div class="card"><div class="hd"><div><h2>Suggested offer</h2><div class="small sub">David picks this from what ${esc(g.name.split(" ")[0])} likes, not a message sent to everyone</div></div>${pill("ok", money(r.offer.price))}</div><div class="bd" style="display:grid;gap:12px"><div><b>${esc(r.offer.name)}</b><div class="small">Why: ${esc(r.why)}</div>${consentOf(g.id).on ? "" : `<div class="small" style="color:var(--clay)">Will not be sent: no marketing consent (${esc(consentOf(g.id).source)})</div>`}${r.skipped.length ? `<div class="small" style="color:var(--clay)">Not offered on purpose: ${esc(r.skipped.join(", "))}</div>` : ""}</div><div class="chips">${g.likes.length ? g.likes.map((t) => `<span class="chip im">${esc(t)}</span>`).join("") : '<span class="small">No preferences recorded yet</span>'}</div><div><span class="label">Message David would send</span><div class="bubble" style="max-width:none;margin-top:8px">${esc(offerMsg(g, r))}</div></div></div></div>`; })()}
   <div class="card"><div class="pad" style="grid-auto-flow:column;justify-content:start;gap:12px"><span style="color:var(--green)" class="nav" aria-hidden="true">${icon("brain")}</span><p>David will only write something into Opera after a person approves it. Allergies and the guest’s own words outrank anything David inferred, and a conflict stays flagged until staff decide.</p></div></div>
   <div class="card"><div class="hd"><div><h2>All guests</h2><div class="small sub">${D.guests.length} guests · click a row to see their fields above</div></div><input class="search2" id="gq" placeholder="Search name or room" value="${esc(S.guestQ)}" autocomplete="off"></div>
   <div class="cats" style="padding-top:0">${[["all", "All"], ["arriving", "Arriving"], ["inhouse", "In house"], ["departing", "Departing"]].map(([k, l]) => `<button class="btn sm ${S.guestF === k ? "primary" : ""}" style="border-radius:999px" data-a="gfilter" data-v="${k}">${l} ${counts[k]}</button>`).join("")}</div>
@@ -205,13 +256,17 @@ function guests() {
 }
 
 function campaigns() {
-  const list = S.campaigns.slice().sort((a, b) => jday(a) - jday(b));
+  const list = S.campaigns.slice().sort((a, b) => jday(a) - jday(b)), T = revTotals();
   const next = (c) => `Next: tomorrow at ${c.time} · about ${D.audiences[c.audience][1]} guests`;
-  return `<div class="toolbar"><span class="small">Every campaign is yours to change. Click one to edit when it launches, who gets it and what it says.</span><span class="sp"></span><button class="btn primary" data-a="newCamp">+ New campaign</button></div>
+  const kpi = ([l, v, n, cls = ""]) => `<div class="card kpi"><span class="label">${l}</span><b ${cls ? `style="color:var(--${cls})"` : ""}>${v}</b><span class="small">${n}</span></div>`;
+  const rows = list.map((c) => { const r = revOf(c); return `<tr class="click" data-a="editCamp" data-id="${c.id}" tabindex="0"><td class="ask"><b>${esc(c.name)}</b><span class="small">${esc(c.offer)} · ${money(c.price)}</span></td><td class="num">${r.sent}</td><td class="num">${r.replied} <span class="small">${pc(r.replied, r.sent)}</span></td><td class="num">${r.booked} <span class="small">${pc(r.booked, r.sent)}</span></td><td class="num">${money(r.revenue)}</td><td class="num" title="Messages ${money(r.msg)} + delivering the offer ${money(r.deliver)}">${money(r.cost)}</td><td class="num"><b style="color:${r.net >= 0 ? "var(--green)" : "var(--clay)"}">${money(r.net)}</b></td><td><button class="switch" role="switch" aria-checked="${c.on}" data-a="camp" data-id="${c.id}" aria-label="${esc(c.name)} active"></button></td></tr>`; }).join("");
+  return `<div class="toolbar"><span class="small">Three campaigns that make money. Last 30 days, sample data: these are not real sales. Click one to change the offer, price, timing and message.</span></div>
+  <div class="row cards5">${[["Guests messaged", T.sent.toLocaleString(), "across the three campaigns"], ["Response rate", pc(T.replied, T.sent), `${T.replied} guests replied`], ["Booking conversion", pc(T.booked, T.sent), `${T.booked} guests booked an offer`], ["Extra revenue", money(T.revenue), "from offers booked"], ["Net profit", money(T.net), `after ${money(T.cost)} costs`, T.net >= 0 ? "green" : "clay"]].map(kpi).join("")}</div>
+  <div class="card"><div class="hd"><div><h2>Results by campaign</h2><div class="small sub">Costs are $${D.msgCost.toFixed(2)} per message sent plus what it costs the hotel to deliver each booked offer</div></div></div><table class="t"><thead><tr><th>Campaign</th><th>Messaged</th><th>Replied</th><th>Booked</th><th>Revenue</th><th>Costs</th><th>Net profit</th><th>Active</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <div class="card"><div class="hd"><div><h2>Who gets which offer</h2><div class="small sub">Each guest gets the offer that fits what they like. Click a guest to see the message.</div></div></div><table class="t"><thead><tr><th>Guest</th><th>Stage</th><th>Offer</th><th>Why David chose it</th><th>Price</th><th>Marketing consent</th></tr></thead><tbody>${D.guests.map((g) => { const r = recommend(g); return `<tr class="click" data-a="offerGuest" data-id="${g.id}" tabindex="0"><td class="ask"><b>${esc(g.name)}</b><span class="small">${esc(g.room)}</span></td><td>${{ arriving: "Before arrival", inhouse: "During the stay", departing: "Leaving" }[g.status]}</td><td>${esc(r.offer.name)}</td><td class="small" style="color:var(--ink)">${esc(r.why)}${r.skipped.length ? `<br><span style="color:var(--clay)">Skipped: ${esc(r.skipped.join(", "))}</span>` : ""}</td><td class="num">${money(r.offer.price)}</td><td>${consentOf(g.id).on ? pill("ok", "Agreed") : `<span class="pill review" title="${esc(consentOf(g.id).source)}">Held back</span>`}</td></tr>`; }).join("")}</tbody></table></div>
   <div class="card"><div class="hd"><div><h2>Guest journey</h2><div class="small sub">Where each campaign lands in a stay · click a dot to edit it</div></div></div><div class="bd">${journey()}</div></div>
-  <div class="row cards3" style="grid-template-columns:repeat(3,1fr)">${list.map((c) => `<div class="card pad"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px"><span class="label">${D.triggers[c.trigger].label}</span>${quiet(c.time) ? `<span title="Inside quiet hours: David will hold it" class="small" style="color:var(--clay)">quiet hours</span>` : ""}</div><h2>${esc(c.name)}</h2><span class="mono" style="color:var(--green)">${esc(whenText(c))}</span><p class="small clamp" style="color:var(--ink);min-height:62px">${esc(c.text)}</p><div style="display:flex;gap:6px;flex-wrap:wrap">${chip(D.channelChoices[c.channel].replace("Guest’s preferred channel", "Preferred channel"))}<span class="chip im">${esc(D.audiences[c.audience][0])}</span></div><span class="small">${c.on ? next(c) : "Paused: nothing is sent"}</span><div style="display:flex;justify-content:space-between;align-items:center;gap:8px">${pill(c.on ? "ok" : "pend", c.on ? "Active" : "Paused")}<div style="display:flex;gap:10px;align-items:center"><button class="btn sm" data-a="editCamp" data-id="${c.id}">Edit</button><button class="switch" role="switch" aria-checked="${c.on}" data-a="camp" data-id="${c.id}" aria-label="${esc(c.name)} active"></button></div></div></div>`).join("")}
-  <button class="card pad" data-a="newCamp" style="border-style:dashed;place-items:center;align-content:center;color:var(--green);font-weight:700;cursor:pointer;min-height:260px"><span style="font-size:28px">+</span>New campaign</button></div>
-  <div class="card"><div class="hd"><div><h2>Sending rules</h2><div class="small sub">These apply to every campaign. Change them here and the warnings update.</div></div></div><div class="bd"><div class="row" style="grid-template-columns:repeat(3,1fr)"><label class="fld"><span class="label">Quiet hours start</span><input type="time" data-r="quietStart" value="${S.rules.quietStart}"></label><label class="fld"><span class="label">Quiet hours end</span><input type="time" data-r="quietEnd" value="${S.rules.quietEnd}"></label><label class="fld"><span class="label">Most campaign texts per guest per day</span><select data-r="perDay">${[1, 2, 3].map((n) => `<option ${S.rules.perDay === n ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>
+  <div class="row cards3" style="grid-template-columns:repeat(3,1fr)">${list.map((c) => `<div class="card pad"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px"><span class="label">${D.triggers[c.trigger].label}</span>${quiet(c.time) ? `<span title="Inside quiet hours: David will hold it" class="small" style="color:var(--clay)">quiet hours</span>` : ""}</div><h2>${esc(c.name)}</h2><span class="mono" style="color:var(--green)">${esc(whenText(c))}</span><p class="small clamp" style="color:var(--ink);min-height:62px">${esc(c.text)}</p><div style="display:flex;gap:6px;flex-wrap:wrap">${chip(D.channelChoices[c.channel].replace("Guest’s preferred channel", "Preferred channel"))}<span class="chip im">${esc(D.audiences[c.audience][0])}</span></div><span class="small">${c.on ? next(c) : "Paused: nothing is sent"}</span><div style="display:flex;justify-content:space-between;align-items:center;gap:8px">${pill(c.on ? "ok" : "pend", c.on ? "Active" : "Paused")}<button class="btn sm" data-a="editCamp" data-id="${c.id}">Edit</button></div></div>`).join("")}</div>
+    <div class="card"><div class="hd"><div><h2>Sending rules</h2><div class="small sub">These apply to every campaign. Change them here and the warnings update.</div></div></div><div class="bd"><div class="row" style="grid-template-columns:repeat(3,1fr)"><label class="fld"><span class="label">Quiet hours start</span><input type="time" data-r="quietStart" value="${S.rules.quietStart}"></label><label class="fld"><span class="label">Quiet hours end</span><input type="time" data-r="quietEnd" value="${S.rules.quietEnd}"></label><label class="fld"><span class="label">Most campaign texts per guest per day</span><select data-r="perDay">${[1, 2, 3].map((n) => `<option ${S.rules.perDay === n ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>
   <div class="row" style="grid-template-columns:repeat(3,1fr);margin-top:12px">${["Only guests who have said yes to texts", "STOP is honoured immediately and permanently", "Nothing invented: only what is on your menu and policies"].map((r) => `<div class="check" style="border:0;padding:0"><svg viewBox="0 0 24 24">${ICON.check}</svg><span>${r} <span class="small">(always on)</span></span></div>`).join("")}</div></div></div>`;
 }
 
@@ -260,7 +315,30 @@ function brain() {
   <div class="card pad"><h2>How he behaves</h2>${["Complaints and emergencies go straight to the duty manager", "Remembered habits are offered as a question, never assumed", "Allergies travel with every food order to the kitchen"].map((t) => `<div class="check"><svg viewBox="0 0 24 24">${ICON.check}</svg><span>${t}</span></div>`).join("")}</div></div></div>`;
 }
 
-const V = { today, inbox, requests, guests, campaigns, opera, channels, brain };
+
+/* privacy: roles, consent, who looked, data requests */
+function privacy() {
+  const R = ROLES[S.role], ok = D.guests.filter((g) => consentOf(g.id).on).length, openD = S.dsr.filter((x) => x.st === "open").length;
+  const kpi = ([l, v, n]) => `<div class="card kpi"><span class="label">${l}</span><b>${v}</b><span class="small">${n}</span></div>`;
+  const dis = R.manage ? "" : "disabled";
+  return `<div class="toolbar"><span class="small">Sample data. These controls show how guest data is protected; they do not make a hotel compliant on their own. A lawyer should confirm what applies.</span></div>
+  <div class="row cards4">${[["Agreed to marketing", `${ok} of ${D.guests.length}`, "guests who said yes"], ["Held back", String(D.guests.length - ok), "no consent, never messaged"], ["Open data requests", String(openD), "export or deletion"], ["Access events", String(S.access.length), "who looked, logged"]].map(kpi).join("")}</div>
+  <div class="card"><div class="hd"><div><h2>Marketing consent</h2><div class="small sub">A guest only gets a campaign if they agreed. ${R.manage ? "Changing it is logged." : "Only the duty manager can change this."}</div></div></div><table class="t"><thead><tr><th>Guest</th><th>Source</th><th>Date</th><th>Marketing messages</th></tr></thead><tbody>${D.guests.map((g) => { const c = consentOf(g.id); return `<tr><td class="ask"><b>${esc(g.name)}</b><span class="small">${esc(g.room)}</span></td><td>${esc(c.source)}</td><td class="mono">${esc(c.date || "-")}</td><td><button class="switch" role="switch" aria-checked="${c.on}" data-a="consent" data-id="${g.id}" aria-label="${esc(g.name)} marketing consent" ${dis}></button></td></tr>`; }).join("")}</tbody></table></div>
+  <div class="row" style="grid-template-columns:1fr 1fr">
+    <div class="card"><div class="hd"><div><h2>Who can see what</h2><div class="small sub">Switch role at the bottom left to see each view</div></div></div><table class="t"><thead><tr><th>Role</th><th>Pages</th><th>Phone numbers</th><th>Manage data</th></tr></thead><tbody>${Object.entries(ROLES).map(([k, r]) => `<tr class="${k === S.role ? "sel" : ""}"><td><b>${esc(r.label)}</b></td><td class="small" style="color:var(--ink)">${r.pages.map((p) => PAGES.find((x) => x[0] === p)[1]).join(", ")}</td><td>${r.phone ? "Shown" : "Hidden"}</td><td>${r.manage ? "Yes" : "No"}</td></tr>`).join("")}</tbody></table></div>
+    <div class="card"><div class="hd"><div><h2>Data requests</h2><div class="small sub">A guest can ask for a copy of their data or for it to be deleted</div></div></div><div class="bd" style="display:grid;gap:12px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><select id="dsrGuest" class="sel" aria-label="Guest">${D.guests.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join("")}</select><button class="btn sm" data-a="dsrExport" ${dis}>Export their data</button><button class="btn sm" data-a="dsrDelete" ${dis}>Request deletion</button></div>
+      ${S.dsr.length ? S.dsr.map((x, i) => `<div class="check" style="justify-content:space-between"><span><b>${esc(x.guest)}</b> · ${x.kind === "export" ? "export" : "deletion"}<div class="small">Opened ${x.opened} · answer by ${x.due}</div></span>${x.st === "open" ? `<button class="btn sm" data-a="dsrDone" data-i="${i}" ${dis}>Mark complete</button>` : pill("ok", "Complete")}</div>`).join("") : '<span class="small">No requests yet.</span>'}
+      <span class="small">Demo only: completing a deletion here does not remove the sample data.</span></div></div></div>
+  <div class="row" style="grid-template-columns:1fr 1fr">
+    <div class="card"><div class="hd"><div><h2>Access log</h2><div class="small sub">Every time someone opens a guest, conversation or request, or changes something</div></div></div><table class="t"><thead><tr><th>Time</th><th>Who</th><th>What</th></tr></thead><tbody>${S.access.slice(0, 14).map((x) => `<tr><td class="mono">${x.t}</td><td class="small" style="color:var(--ink)">${esc(x.who)}</td><td>${esc(x.act)}<div class="small">${esc(x.tgt)}</div></td></tr>`).join("")}</tbody></table></div>
+    <div class="card pad"><h2>How guest data is handled</h2>
+      <label class="fld"><span class="label">Keep guest profiles after check-out</span><select data-a="retention" class="sel" ${dis}>${[12, 24, 36].map((m) => `<option value="${m}" ${S.retention === m ? "selected" : ""}>${m} months, then anonymise</option>`).join("")}</select></label>
+      ${["Marketing messages only go to guests who agreed, and STOP is honoured immediately", "Allergies and health notes are only visible to roles that need them", "Phone numbers are hidden from roles that do not need to call or message guests", "Every view and change of guest data is logged with who and when", "Guests can ask for a copy of their data or for deletion, with an answer date"].map((t) => `<div class="check"><svg viewBox="0 0 24 24">${ICON.check}</svg><span>${t}</span></div>`).join("")}
+      <p class="small" style="margin-top:8px">Needs legal review: which laws apply depends on where the hotel is and where guests live. Examples to check: Vietnam’s personal data protection rules, the EU’s GDPR for European guests, and Canada’s PIPEDA and CASL.</p></div></div>`;
+}
+
+const V = { today, inbox, requests, guests, campaigns, opera, channels, brain, privacy };
 
 /* ---------- editor drawer: campaigns, knowledge, connections ---------- */
 const fld = (label, inner, hint = "") => `<label class="fld"><span class="label">${label}</span>${inner}${hint ? `<span class="small">${hint}</span>` : ""}</label>`;
@@ -275,6 +353,9 @@ function campaignForm(e) {
       <div class="two">${fld("Moment in the stay", `<select data-f="trigger">${opts(D.triggers, d.trigger, (v) => v.label)}</select>`)}${d.trigger === "arrival_day" ? fld("Day", `<input value="Day of arrival" disabled>`) : fld(esc(tr.unit.replace(/^days? /, "Days ") || "Days"), `<input type="number" min="0" max="365" data-f="days" value="${d.days}">`)}</div>
       ${fld("Time of day", `<input type="time" data-f="time" value="${d.time}">`)}
       <div class="okmsg" id="cwhen"></div></div>
+    <div class="grp"><span class="label">The offer</span>
+      ${fld("What is being sold", `<input data-f="offer" value="${esc(d.offer)}" placeholder="e.g. Spa treatment" autocomplete="off">`)}
+      <div class="two">${fld("Price ($)", `<input type="number" min="0" data-f="price" value="${d.price ?? 0}">`)}${fld("Cost to the hotel per booking ($)", `<input type="number" min="0" data-f="unitCost" value="${d.unitCost ?? 0}">`, "Used to work out net profit")}</div></div>
     <div class="grp"><span class="label">Who gets it</span><div class="two">${fld("Guests", `<select data-f="audience">${opts(D.audiences, d.audience, (v) => `${v[0]} (about ${v[1]})`)}</select>`)}${fld("Channel", `<select data-f="channel">${opts(D.channelChoices, d.channel)}</select>`)}</div></div>
     <div class="grp"><span class="label">What it says</span>
       <div class="seg" role="group" style="justify-self:start"><button class="${d.mode === "david" ? "on" : ""}" data-a="cmode" data-v="david">David writes it</button><button class="${d.mode === "exact" ? "on" : ""}" data-a="cmode" data-v="exact">My exact words</button></div>
@@ -286,7 +367,7 @@ function campaignForm(e) {
     <div style="display:flex;justify-content:space-between;align-items:center"><span>Active</span><button class="switch" type="button" role="switch" aria-checked="${d.on}" data-a="cswitch" aria-label="Active"></button></div>
     <div class="errmsg" id="cerr" role="alert"></div>
   </div>
-  <div class="df"><button class="btn primary" data-a="saveCamp">${e.isNew ? "Create campaign" : "Save changes"}</button><button class="btn" data-a="closeEdit">Cancel</button><span class="sp"></span><button class="btn" data-a="testCamp" title="Send a preview to your own phone">Send me a test</button>${e.isNew ? "" : `<button class="btn" data-a="dupCamp">Duplicate</button><button class="btn danger" data-a="delCamp">${e.confirm ? "Click again to delete" : "Delete"}</button>`}</div>`;
+  <div class="df"><button class="btn primary" data-a="saveCamp">${e.isNew ? "Create campaign" : "Save changes"}</button><button class="btn" data-a="closeEdit">Cancel</button><span class="sp"></span><button class="btn" data-a="testCamp" title="Send a preview to your own phone">Send me a test</button></div>`;
 }
 function updateCampLive() {
   const e = S.edit; if (!e || e.type !== "camp") return; const d = e.data;
@@ -326,9 +407,10 @@ function drawer() {
 const closeEdit = () => { S.edit = null; drawer(); };
 
 /* ---------- shell ---------- */
-function route() { const p = location.hash.replace(/^#\//, "") || "today"; return V[p] ? p : "today"; }
+function route() { const p = location.hash.replace(/^#\//, "") || "today"; return V[p] && can(p) ? p : ROLES[S.role].pages[0]; }
 function renderNav(p) {
-  $("#nav").innerHTML = PAGES.map((x) => typeof x === "string" ? `<div class="label nav-sec">${x}</div>` : `<a href="#/${x[0]}" class="${x[0] === p ? "on" : ""}" ${x[0] === p ? 'aria-current="page"' : ""}>${icon(x[2])}${x[1]}${x[0] === "inbox" ? `<span class="count">${D.convos.filter((c) => c.unread).length + 11}</span>` : x[0] === "requests" ? `<span class="count">${openCount()}</span>` : ""}</a>`).join("");
+  const vis = []; PAGES.forEach((x, k) => { if (typeof x !== "string") { if (can(x[0])) vis.push(x); return; } const nxt = PAGES.slice(k + 1); const grp = nxt.slice(0, nxt.findIndex((y) => typeof y === "string") < 0 ? nxt.length : nxt.findIndex((y) => typeof y === "string")); if (grp.some((y) => can(y[0]))) vis.push(x); });
+  $("#nav").innerHTML = vis.map((x) => typeof x === "string" ? `<div class="label nav-sec">${x}</div>` : `<a href="#/${x[0]}" class="${x[0] === p ? "on" : ""}" ${x[0] === p ? 'aria-current="page"' : ""}>${icon(x[2])}${x[1]}${x[0] === "inbox" ? `<span class="count">${D.convos.filter((c) => c.unread).length + 11}</span>` : x[0] === "requests" ? `<span class="count">${openCount()}</span>` : ""}</a>`).join("");
 }
 function render() {
   const p = route(), view = $("#view");
@@ -343,22 +425,35 @@ $("#reset").addEventListener("click", () => { if (confirm(loc("Clear every chang
 
 /* ---------- actions ---------- */
 const next = { review: "progress", pending: "progress", progress: "done", done: "pending" };
-const blankCamp = () => ({ id: "k" + Date.now(), name: "", trigger: "before_arrival", days: 1, time: "10:00", audience: "all", channel: "best", mode: "david", on: true, text: "" });
+const blankCamp = () => ({ id: "k" + Date.now(), offer: "", price: 0, unitCost: 0, stats: { sent: 0, replied: 0, booked: 0 }, name: "", trigger: "before_arrival", days: 1, time: "10:00", audience: "all", channel: "best", mode: "david", on: true, text: "" });
 const A = {
   range: (t) => (S.range = t.dataset.v), assignee: (t) => (S.assignee = t.value), auto: () => { S.autoReply = !S.autoReply; toast(S.autoReply ? "David is replying automatically" : "David paused: replies wait for staff"); },
   notes: (t) => (S.notesTab = t.dataset.v), dept: (t) => (S.reqFilter = t.dataset.v),
   cycle: (t) => { const r = S.requests.find((x) => x.id === t.dataset.id), told = setStatus(r, next[r.st], S.tellGuest); toast(`${r.dept} · room ${r.room}: ${ST[r.st][1].toLowerCase()}${told ? ". Guest told" : ""}`); },
-  convo: (t) => { S.convo = t.dataset.id; D.convos.find((c) => c.id === t.dataset.id).unread = false; },
+  convo: (t) => { audit("Opened conversation", D.convos.find((c) => c.id === t.dataset.id).name); S.convo = t.dataset.id; D.convos.find((c) => c.id === t.dataset.id).unread = false; },
   takeover: () => { const id = S.convo; S.takeover[id] = !S.takeover[id]; (S.extra[id] ||= []).push(["sys", S.takeover[id] ? "Maya took over from David" : "Handed back to David"]); },
   /* guests */
   fields: () => (S.fieldsOpen = !S.fieldsOpen),
-  pickGuest: (t) => { S.guest = t.dataset.id; S.fieldsOpen = false; window.scrollTo({ top: 0, behavior: "smooth" }); },
+  pickGuest: (t) => { audit("Viewed guest profile", G(t.dataset.id).name); S.guest = t.dataset.id; S.fieldsOpen = false; window.scrollTo({ top: 0, behavior: "smooth" }); },
   gfilter: (t) => (S.guestF = t.dataset.v),
   openChat: (t, e) => { e.stopPropagation(); S.convo = t.dataset.id; D.convos.find((c) => c.id === t.dataset.id).unread = false; location.hash = "#/inbox"; },
   approve: (t) => { const f = gFields(S.guest).find((x) => x.id === t.dataset.id); f.st = "ok"; f.label = "Synced"; toast(`${f.field} approved and written to Opera`); },
   approveAll: () => { gFields(S.guest).forEach((f) => { f.st = "ok"; f.label = "Synced"; }); toast(`${G(S.guest).name}: all write-backs approved and sent to Opera`); },
   review: () => toast(`${needsCount(S.guest)} field${needsCount(S.guest) === 1 ? " is" : "s are"} waiting for you`),
+  tick: () => {
+    S.clock += 15; const mgr = S.team.find((t) => /manager/i.test(t.role)); let n = 0;
+    S.requests.forEach((r) => { if (overdueBy(r) > 0 && !r.escalated) { r.escalated = true; n++; log(r, "overdue", `Overdue: the duty manager${mgr ? ` (${mgr.name})` : ""} was told`); if (mgr && S.zaloOn) zaloSend(r, mgr); } });
+    toast(n ? `${n} task${n === 1 ? " is" : "s are"} overdue. The duty manager was told` : `Demo time is ${hhmm(S.clock)}`);
+  },
+  consent: (t) => { const c = (S.consent[t.dataset.id] ||= { on: false, source: "Front desk", date: "" }); if (!ROLES[S.role].manage) return; c.on = !c.on; c.source = c.on ? "Manager, " + ROLES[S.role].who : "Withdrawn by manager"; c.date = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" }); audit(c.on ? "Recorded marketing consent" : "Withdrew marketing consent", G(t.dataset.id).name); toast(`${G(t.dataset.id).name}: ${c.on ? "can now receive campaigns" : "will not receive campaigns"}`); },
+  retention: (t) => { S.retention = Number(t.value); audit("Changed retention", `${S.retention} months`); },
+  dsrExport: () => { const g = G($("#dsrGuest").value), st = S.guests.find((x) => x.id === g.id), data = { exported_at: new Date().toISOString(), guest: { id: g.id, name: g.name, room: g.room, phone: g.phone, opera_profile: g.opera, loyalty: g.tier, stays: g.stays, likes: g.likes, allergies: g.allergies, marketing_consent: consentOf(g.id), fields: st.fields.map(({ field, opera, david }) => ({ field, opera, david })) } };
+    try { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); a.download = `${g.name.toLowerCase().replace(/\s+/g, "-")}-data.json`; a.click(); } catch { /* ignore */ }
+    S.dsr.unshift({ guest: g.name, kind: "export", opened: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" }), due: new Date(Date.now() + 30 * 864e5).toLocaleDateString("en-GB", { day: "numeric", month: "short" }), st: "done" }); audit("Exported guest data", g.name); toast(`Data for ${g.name} downloaded`); },
+  dsrDelete: () => { const g = G($("#dsrGuest").value); S.dsr.unshift({ guest: g.name, kind: "delete", opened: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" }), due: new Date(Date.now() + 30 * 864e5).toLocaleDateString("en-GB", { day: "numeric", month: "short" }), st: "open" }); audit("Requested data deletion", g.name); toast(`Deletion requested for ${g.name}`); },
+  dsrDone: (t) => { const x = S.dsr[Number(t.dataset.i)]; if (x) { x.st = "done"; audit("Completed data request", x.guest); toast(`Request for ${x.guest} marked complete`); } },
   /* campaigns */
+  offerGuest: (t) => { S.guest = t.dataset.id; S.fieldsOpen = false; location.hash = "#/guests"; },
   camp: (t) => { const c = S.campaigns.find((x) => x.id === t.dataset.id); c.on = !c.on; toast(`${c.name}: ${c.on ? "active" : "paused"}`); },
   newCamp: () => { S.edit = { type: "camp", isNew: true, data: blankCamp() }; },
   editCamp: (t) => { S.edit = { type: "camp", isNew: false, data: { ...S.campaigns.find((x) => x.id === t.dataset.id) } }; },
@@ -372,9 +467,9 @@ const A = {
   saveCamp: () => {
     const d = S.edit.data, err = [];
     if (!d.name.trim()) err.push("Give the campaign a name."); if (!d.text.trim()) err.push("Write the message."); const n = Number(d.days);
-    if (d.trigger !== "arrival_day" && (!Number.isInteger(n) || n < 0 || n > 365)) err.push("Days must be a whole number from 0 to 365."); if (!d.time) err.push("Choose a time of day.");
+    if (d.trigger !== "arrival_day" && (!Number.isInteger(n) || n < 0 || n > 365)) err.push("Days must be a whole number from 0 to 365."); if (!d.time) err.push("Choose a time of day."); if (!(Number(d.price) >= 0) || !(Number(d.unitCost) >= 0)) err.push("Price and cost must be numbers, zero or more.");
     if (err.length) { S.edit.error = err.join(" "); return; }
-    d.name = d.name.trim(); d.text = d.text.trim(); d.days = d.trigger === "arrival_day" ? 0 : n;
+    audit("Changed campaign", d.name.trim()); d.name = d.name.trim(); d.text = d.text.trim(); d.offer = String(d.offer || "").trim(); d.price = Number(d.price) || 0; d.unitCost = Number(d.unitCost) || 0; d.days = d.trigger === "arrival_day" ? 0 : n;
     if (S.edit.isNew) S.campaigns.push(d); else S.campaigns = S.campaigns.map((x) => (x.id === d.id ? d : x));
     S.edit = null; toast(`${d.name}: ${S.campaigns.find((x) => x.id === d.id).on ? "will go out " + whenText(d).toLowerCase() : "saved, paused"}`);
   },
@@ -403,7 +498,7 @@ const assignCell = (r) => `<div style="display:flex;gap:8px;align-items:center">
 const assigneeSelect = () => `<select class="sel" data-a="assignee" aria-label="Assigned to"><option value="All" ${S.assignee === "All" ? "selected" : ""}>All people</option><option value="none" ${S.assignee === "none" ? "selected" : ""}>Unassigned</option>${S.team.map((t) => `<option value="${t.id}" ${t.id === S.assignee ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select>`;
 const openTasks = (id) => S.requests.filter((r) => r.to === id && r.st !== "done").length;
 
-const zaloText = (r, e) => `Task for ${firstName(e.name)}: ${r.dept}, room ${r.room}. ${r.ask}${r.guest ? ` (guest: ${r.guest})` : ""}. Reply DONE when finished.`;
+const zaloText = (r, e) => `Task for ${firstName(e.name)}: ${r.dept}, room ${r.room}. ${r.ask}${r.guest ? ` (guest: ${r.guest})` : ""}.${r.opened ? ` Due by ${hhmm(dueMin(r))}.` : ""} Reply DONE when finished.`;
 function zaloSend(req, emp, kind = "assignment") {
   const text = kind === "test" ? `Test from David for ${firstName(emp.name)}: this is how task alerts will look. No action needed.` : zaloText(req, emp);
   const connected = S.conns.find((c) => c.id === "zalo").status === "connected";
@@ -427,7 +522,7 @@ function guestUpdate(r, kind) {
   return text;
 }
 function setStatus(r, st, tell) {
-  r.st = st; log(r, "status", st === "done" ? "Marked done" : `Marked ${ST[st][1].toLowerCase()}`);
+  r.st = st; if (st === "done") r.doneAt = hhmm(S.clock); else delete r.doneAt; log(r, "status", st === "done" ? "Marked done" : `Marked ${ST[st][1].toLowerCase()}`);
   return st === "done" && tell ? guestUpdate(r, "done") : null;
 }
 function doAssign(r, empId, tell = false) {
@@ -440,6 +535,20 @@ function doAssign(r, empId, tell = false) {
   return { emp, z, guest: tell ? guestUpdate(r, "assign") : null };
 }
 
+/* A guest writes to David. If it is something a department must do, David makes the task, sends it to the person on Zalo and tells the guest when to expect it. */
+function guestSays(text) {
+  const c = D.convos.find((x) => x.id === S.convo), ex = (S.extra[c.id] ||= []), t = hhmm(S.clock);
+  ex.push(["guest", text, t]);
+  if (S.takeover[c.id]) return;
+  const hit = D.intents.find(([re]) => re.test(text));
+  if (!hit) { const k = answerFor(text); ex.push(["david", k ? k[0] : "I don’t have that on file, so I won’t guess. I’ve asked the front desk and I’ll come back to you.", t]); return; }
+  const [, dept, ask] = hit, r = { id: "r" + Date.now(), dept, room: c.room.replace(/^(Room|Suite) /, ""), ask: ask(text), guest: c.name, ch: c.ch, opened: t, to: null, st: "pending", auto: true, log: [] };
+  log(r, "created", `Created by David from ${c.ch}: “${text}”`); S.requests.unshift(r);
+  const a = doAssign(r, S.autoAssign[dept] || null, false), who = a.emp ? ` ${firstName(a.emp.name)} is on it.` : " The team will pick it up shortly.";
+  ex.push(["sys", `Task created for ${dept}: ${r.ask}, due ${hhmm(dueMin(r))}`], ["david", `Of course. I’ve passed this to ${dept}.${who} You should have it by about ${hhmm(dueMin(r))}.`, t]);
+  log(r, "guest", `Guest told on ${c.ch}: due about ${hhmm(dueMin(r))}`); toast(`Task created for ${dept}${a.emp ? ` and sent to ${a.emp.name}` : ""}`);
+}
+
 /* A small API that runs inside this page, shaped like the one the David server will expose. */
 function apiCall({ method, path, key, body }) {
   const res = (status, b) => ({ status, body: b });
@@ -450,7 +559,7 @@ function apiCall({ method, path, key, body }) {
   let json = {};
   if (method !== "GET" && String(body || "").trim()) { try { json = JSON.parse(body); } catch { return err(400, "invalid_json", "The request body is not valid JSON."); } }
   const pub = (e) => ({ id: e.id, name: e.name, role: e.role, department: e.dept, zalo_phone: e.zalo || null, consent: e.consent, on_shift: e.onShift });
-  const out = (r) => ({ id: r.id, department: r.dept, room: r.room, request: r.ask, guest: r.guest || null, status: r.st, assigned_to: r.to ? { id: r.to, name: T(r.to) ? T(r.to).name : null } : null, opened_at: r.opened });
+  const out = (r) => ({ id: r.id, department: r.dept, room: r.room, request: r.ask, guest: r.guest || null, status: r.st, due_at: hhmm(dueMin(r)), overdue_minutes: overdueBy(r), assigned_to: r.to ? { id: r.to, name: T(r.to) ? T(r.to).name : null } : null, opened_at: r.opened });
   const zout = (z) => (z ? { message_id: z.id, status: z.status, ...(z.reason ? { reason: z.reason } : {}) } : { status: "skipped", reason: "Zalo messages are switched off" });
   let m;
   if (method === "GET" && path === "/v1/staff") return res(200, { data: S.team.map(pub) });
@@ -474,7 +583,7 @@ function apiCall({ method, path, key, body }) {
     if (!D.departments.includes(json.department)) return err(422, "invalid_department", `department must be one of: ${D.departments.join(", ")}.`);
     if (!json.room || !json.request) return err(422, "invalid_request", "room and request are required.");
     if (json.assignee_id && !T(json.assignee_id)) return err(404, "staff_not_found", `No employee ${json.assignee_id}.`);
-    const r = { id: "r" + (S.requests.length + 1 + Math.floor(Math.random() * 90)), dept: json.department, room: String(json.room), ask: String(json.request), guest: json.guest || "", ch: json.channel || "WhatsApp", opened: now().slice(0, 5), to: null, st: "pending" };
+    const r = { id: "r" + (S.requests.length + 1 + Math.floor(Math.random() * 90)), dept: json.department, room: String(json.room), ask: String(json.request), guest: json.guest || "", ch: json.channel || "WhatsApp", opened: hhmm(S.clock), to: null, st: "pending" };
     S.requests.unshift(r);
     const target = json.assignee_id || S.autoAssign[json.department] || null, a = doAssign(r, target, json.notify_guest !== false);
     return res(201, { ...out(r), zalo: a.emp ? zout(a.z) : null, guest_message: a.guest, auto_assigned: !json.assignee_id && !!a.emp });
@@ -616,7 +725,7 @@ function reqForm(e) {
   const opt = (t) => `<option value="${t.id}" ${t.id === d.assignee ? "selected" : ""}>${esc(t.name)} · ${esc(t.dept)} · ${openTasks(t.id)} open${t.zalo && t.consent ? "" : " · no Zalo"}</option>`;
   const sorted = [...S.team.filter((t) => t.dept === r.dept), ...S.team.filter((t) => t.dept !== r.dept)];
   const assigned = !!emp, done = r.st === "done";
-  return `<div class="dh"><div><h2>${esc(r.ask)}</h2><div class="small" style="margin-top:3px">${esc(r.dept)} · room ${esc(r.room)} · ${r.guest ? esc(r.guest) : "no guest named"} · ${esc(r.ch)} · opened ${r.opened}</div></div><button class="icon-btn" data-a="closeEdit" aria-label="Close">✕</button></div>
+  return `<div class="dh"><div><h2>${esc(r.ask)}</h2><div class="small" style="margin-top:3px">${esc(r.dept)} · room ${esc(r.room)} · ${r.guest ? esc(r.guest) : "no guest named"} · ${esc(r.ch)} · opened ${r.opened} · due ${hhmm(dueMin(r))}</div></div><button class="icon-btn" data-a="closeEdit" aria-label="Close">✕</button></div>
   <div class="db">
     <div style="display:flex;gap:10px;align-items:center">${pill(ST[r.st][0], ST[r.st][1])}<span class="small">${assigned ? `With ${esc(emp.name)}` : "Not allocated yet"}</span></div>
     <div class="grp"><span class="label">1 · Send it to the right person</span>
@@ -639,7 +748,7 @@ function updateReqLive() {
 }
 Object.assign(A, {
   tellGuest: () => { S.tellGuest = !S.tellGuest; toast(S.tellGuest ? "Guests are told when a request is sent to someone and when it is done" : "Guests will not be messaged automatically"); },
-  openReq: (t) => openReqEdit(t.dataset.id),
+  openReq: (t) => { const r = S.requests.find((x) => x.id === t.dataset.id); if (r) audit("Opened request", r.ask); openReqEdit(t.dataset.id); },
   reqAssign: () => {
     const e = S.edit, r = S.requests.find((x) => x.id === e.id), { emp, z, guest } = doAssign(r, e.data.assignee, e.data.tell);
     toast(!emp ? "Choose a person" : z && z.status === "failed" ? `Allocated to ${emp.name}, but Zalo failed: ${z.reason}` : `Sent to ${emp.name} on Zalo${guest ? `, and ${firstName(r.guest)} was told` : ""}`);
@@ -678,6 +787,7 @@ document.addEventListener("input", (e) => {
 document.addEventListener("submit", (e) => {
   const f = e.target.closest("form[data-a]"); if (!f) return; e.preventDefault();
   if (f.dataset.a === "send") { const i = $("#reply"), v = i.value.trim(); if (!v) return; (S.extra[S.convo] ||= []).push(["staff", v, now().slice(0, 5)]); render(); $("#reply").focus(); }
+  if (f.dataset.a === "asGuest") { const i = $("#gsim"), v = i.value.trim(); if (!v) return; guestSays(v); render(); $("#gsim").focus(); }
   if (f.dataset.a === "ask") { const i = $("#ask"), v = i.value.trim(); if (!v) return; const hit = answerFor(v); S.qa.push([v, hit ? hit[0] : "I don’t have that on file, so I won’t guess. I’ve asked the front desk and I’ll come back to you.", hit ? hit[1] : null]); render(); $("#ask").focus(); }
 });
 $("#scrim").addEventListener("click", closeEdit);
@@ -690,7 +800,7 @@ setInterval(() => { const e = D.eventPool[ev++ % D.eventPool.length]; S.events.u
 
 /* search palette */
 const pal = $("#palette"), pq = $("#pq"), pl = $("#pl"); let items = [], sel = 0;
-function items_() { return [...PAGES.filter((x) => typeof x !== "string").map((x) => ({ k: "Page", t: x[1], go: () => (location.hash = `#/${x[0]}`) })), ...D.guests.map((g) => ({ k: "Guest", t: `${g.name} · ${g.room}`, go: () => { S.guest = g.id; S.fieldsOpen = false; location.hash = "#/guests"; render(); } })), ...S.campaigns.map((c) => ({ k: "Campaign", t: c.name, go: () => { location.hash = "#/campaigns"; S.edit = { type: "camp", isNew: false, data: { ...c } }; render(); drawer(); } })), ...S.requests.map((r) => ({ k: "Request", t: `${r.ask} · room ${r.room}`, go: () => { location.hash = "#/requests"; openReqEdit(r.id); render(); drawer(); } }))]; }
+function items_() { return [...PAGES.filter((x) => typeof x !== "string" && can(x[0])).map((x) => ({ k: "Page", t: x[1], go: () => (location.hash = `#/${x[0]}`) })), ...D.guests.map((g) => ({ k: "Guest", t: `${g.name} · ${g.room}`, go: () => { S.guest = g.id; S.fieldsOpen = false; location.hash = "#/guests"; render(); } })), ...S.campaigns.map((c) => ({ k: "Campaign", t: c.name, go: () => { location.hash = "#/campaigns"; S.edit = { type: "camp", isNew: false, data: { ...c } }; render(); drawer(); } })), ...S.requests.map((r) => ({ k: "Request", t: `${r.ask} · room ${r.room}`, go: () => { location.hash = "#/requests"; openReqEdit(r.id); render(); drawer(); } }))]; }
 function drawPal() { const q = pq.value.toLowerCase(); items = items_().filter((i) => i.t.toLowerCase().includes(q)).slice(0, 9); sel = Math.min(sel, Math.max(0, items.length - 1)); pl.innerHTML = items.map((i, n) => `<li><button class="${n === sel ? "on" : ""}" data-n="${n}"><span class="label" style="width:70px">${i.k}</span>${esc(i.t)}</button></li>`).join("") || '<li class="empty">No matches</li>'; }
 const openPal = () => { pal.hidden = false; pq.value = ""; sel = 0; drawPal(); pq.focus(); }, closePal = () => (pal.hidden = true);
 $("#openSearch").addEventListener("click", openPal);
@@ -745,5 +855,9 @@ function setLang(l) {
 document.querySelectorAll("#lang button").forEach((b) => b.addEventListener("click", () => setLang(b.dataset.l)));
 mo.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS });
 
+const roleSel = $("#role");
+function syncRole() { const R = ROLES[S.role]; roleSel.value = S.role; $("#mename").textContent = R.who; $("#meav").textContent = R.who.split(" ").map((w) => w[0]).slice(0, 2).join(""); }
+roleSel.addEventListener("change", () => { audit("Switched view", ROLES[roleSel.value].label); S.role = roleSel.value; S.edit = null; syncRole(); drawer(); render(); toast(`Viewing as ${ROLES[S.role].label}`); });
+syncRole();
 render();
 setLang(lang);
