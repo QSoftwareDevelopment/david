@@ -90,8 +90,7 @@ export const mergeFields = ["first_name", "arrival_date", "checkout_date", "room
 export const sampleGuest = { first_name: "Elena", arrival_date: "Saturday", checkout_date: "Tuesday", room: "Suite 701", hotel: "The Harbour House", allergy: "no shellfish" };
 
 // Revenue campaigns. Results are sample numbers for the last 30 days, not real sales.
-// Revenue = booked x price. Cost = messages sent x msgCost + booked x cost to deliver. Both are worked out in the app so editing a price changes the results.
-export const msgCost = 0.04;
+// Revenue = booked x price. Cost = booked x cost to deliver (messages are treated as free). Both are worked out in the app so editing a price changes the results.
 export const campaigns = [
   { id: "k1", name: "Pre-arrival upsell", trigger: "before_arrival", days: 3, time: "10:00", audience: "all", channel: "best", mode: "david", on: true,
     offer: "Ocean-view room upgrade", price: 85, unitCost: 20, stats: { sent: 412, replied: 96, booked: 31 },
