@@ -287,7 +287,7 @@ const P = [
   [/^(.+) has no Zalo number, so David cannot message them\. Fix their profile in David’s brain first\.$/, (m) => `${m[1]} chưa có số Zalo nên David không thể nhắn. Hãy sửa hồ sơ của họ trong Bộ não của David trước.`],
   [/^(.+) has no consent for Zalo messages, so David cannot message them\. Fix their profile in David’s brain first\.$/, (m) => `${m[1]} chưa đồng ý nhận tin Zalo nên David không thể nhắn. Hãy sửa hồ sơ của họ trong Bộ não của David trước.`],
   [/^(.+) ·? ?no Zalo$/, (m, t) => `${t(m[1])} · không có Zalo`], [/^no Zalo$/, () => "không có Zalo"],
-  [/^Task for (.+?): (.+?), room (\d+)\. (.+) \(guest: (.+)\)\. Reply DONE when finished\.$/, (m, t) => `Công việc cho ${m[1]}: ${t(m[2])}, phòng ${m[3]}. ${m[4]} (khách: ${m[5]}). Trả lời DONE khi xong.`],
+  [/^Task for (.+?): (.+?), room (\d+)\. (.+) \(guest: (.+)\)\.(?: Due by (\d\d:\d\d)\.)? Reply DONE when finished\.$/, (m, t) => `Công việc cho ${m[1]}: ${t(m[2])}, phòng ${m[3]}. ${m[4]} (khách: ${m[5]}).${m[6] ? ` Hạn lúc ${m[6]}.` : ''} Trả lời DONE khi xong.`],
   [/^Test from David for (.+): this is how task alerts will look\. No action needed\.$/, (m) => `Tin thử từ David cho ${m[1]}: thông báo công việc sẽ hiển thị như thế này. Không cần làm gì.`],
   [/^(\d+) written?-?backs?$/, (m) => `${m[1]} ghi ngược`],
   [/^(.+) and (\d+) conflicts? need you$/, (m) => `${m[1]} và ${m[2]} xung đột cần bạn`],
