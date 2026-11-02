@@ -62,7 +62,12 @@ still only has the first commit.
   (`web/i18n.js` says the same about the console's wording).
 - In the demo, David's apology is always in English, even when the guest writes in Vietnamese. The real Claude
   agent replies in the guest's language.
-- Nothing is pushed and there's no PR. The branch exists only on Bryan's machine.
+- Pushed and opened as a **draft PR**: https://github.com/QSoftwareDevelopment/david/pull/1 (into
+  `feat/web-console`). It needs your friend's review before it's merged.
+- Both Vercel checks on the PR (`david-console`, `david-design`) fail with "Git author ba21982 must have access
+  to the project on Vercel". That's a Vercel permissions problem, not a code problem: the Vercel team owner has to
+  invite Bryan's account or authorise the deployment. No preview deploy exists until then.
+- When the PR was opened, the GitHub CI jobs (`server`, `app`) were still running.
 
 ### Ideas for next time
 - Connect the web console to the real server, so the demo uses the actual agent instead of scripted replies.
