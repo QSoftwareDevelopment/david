@@ -52,10 +52,12 @@ still only has the first commit.
   ("Phòng bẩn quá, tôi muốn hoàn tiền") were escalated. Both requests appear on Requests as
   "Upset guest: …" with no console errors.
 - `node --check` passes on `web/app.js` and `web/i18n.js`.
+- Server, run later the same day: `npm ci`, then `npm run typecheck` (clean) and `npm test`: **178 of 178
+  pass**, which is the previous 176 plus the 2 new tests. Node 22, macOS. `npm ci` warned that the esbuild and
+  fsevents install scripts weren't run, and the tests passed anyway.
 
 ### Not done / not verified
-- **The server tests and typecheck have not been run.** The sandbox blocked `npm ci` for this repo. Before
-  merging, run `cd server && npm ci && npm run typecheck && npm test`. The two new tests are untested.
+- The app (`app/`) tests and typecheck weren't run. Nothing in `app/` changed.
 - The Vietnamese keywords were written without a native speaker's review. Check them with a Vietnamese hotelier
   (`web/i18n.js` says the same about the console's wording).
 - In the demo, David's apology is always in English, even when the guest writes in Vietnamese. The real Claude
