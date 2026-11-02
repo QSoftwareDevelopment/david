@@ -535,11 +535,33 @@ function doAssign(r, empId, tell = false) {
   return { emp, z, guest: tell ? guestUpdate(r, "assign") : null };
 }
 
+/* Anger, refunds and money always go to a person. The same words as the server's complaint check (server/src/intents.ts). */
+const COMPLAINT = /\b(terrible|awful|horrible|unacceptable|ridiculous|disgusting|worst|furious|angry|refund(ed)?|money back|compensat(e|ion)|chargeback|lawyer|complain(t|ts|ing)?|manager|disappointed|unhappy|not happy|filthy|rude|bad review)\b/i;
+const COMPLAINT_VI = /(hoàn tiền|trả lại tiền|bồi thường|khiếu nại|quản lý|thất vọng|bực mình|không chấp nhận được|quá tệ|tệ quá|kinh khủng|bẩn quá)/iu;
+const isComplaint = (text) => COMPLAINT.test(text) || COMPLAINT_VI.test(text.normalize("NFC"));
+
+/* David apologises without promising money, flags the conversation and hands it to the duty manager on Zalo. */
+function escalate(c, text, t) {
+  const ex = S.extra[c.id], mgr = S.team.find((e) => e.role === "Duty manager");
+  const r = { id: "r" + Date.now(), dept: "Front desk", room: c.room.replace(/^(Room|Suite) /, ""), ask: `Upset guest: “${text.length > 60 ? text.slice(0, 57) + "…" : text}”`, guest: c.name, ch: c.ch, opened: t, to: mgr ? mgr.id : null, st: "review", auto: true, log: [] };
+  log(r, "created", `Escalated by David from ${c.ch}: “${text}”`); S.requests.unshift(r);
+  if (mgr) {
+    log(r, "assigned", `Assigned to ${mgr.name}`);
+    const z = S.zaloOn ? zaloSend(r, mgr) : null;
+    if (z) log(r, "zalo", z.status === "failed" ? `Zalo to ${mgr.name} failed: ${z.reason}` : `Zalo message sent to ${mgr.name} (${fmtPhone(mgr.zalo)})`);
+  }
+  c.unread = true;
+  const who = mgr ? `${firstName(mgr.name)}, our duty manager,` : "our duty manager";
+  ex.push(["sys", `Escalated to the duty manager${mgr ? ` (${mgr.name})` : ""}: David will not promise refunds or credits`], ["david", `I’m really sorry, ${firstName(c.name)}. That isn’t the stay you should be having. I’ve asked ${who} to contact you personally in the next few minutes.`, t]);
+  toast(`Escalated to the duty manager${mgr ? `: ${mgr.name}` : ""}`);
+}
+
 /* A guest writes to David. If it is something a department must do, David makes the task, sends it to the person on Zalo and tells the guest when to expect it. */
 function guestSays(text) {
   const c = D.convos.find((x) => x.id === S.convo), ex = (S.extra[c.id] ||= []), t = hhmm(S.clock);
   ex.push(["guest", text, t]);
   if (S.takeover[c.id]) return;
+  if (isComplaint(text)) return escalate(c, text, t);
   const hit = D.intents.find(([re]) => re.test(text));
   if (!hit) { const k = answerFor(text); ex.push(["david", k ? k[0] : "I don’t have that on file, so I won’t guess. I’ve asked the front desk and I’ll come back to you.", t]); return; }
   const [, dept, ask] = hit, r = { id: "r" + Date.now(), dept, room: c.room.replace(/^(Room|Suite) /, ""), ask: ask(text), guest: c.name, ch: c.ch, opened: t, to: null, st: "pending", auto: true, log: [] };

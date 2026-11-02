@@ -72,7 +72,9 @@ const RULES: { kind: RequestKind; re: RegExp }[] = [
 ];
 
 const URGENT = /\b(urgent|asap|emergency|right now|immediately|flood|leak(ing)?|no (hot )?water|locked out|can'?t get in|smoke|fire)\b/i;
-const COMPLAINT = /\b(terrible|awful|unacceptable|disgusting|worst|furious|angry|refund|complain|manager|disappointed|filthy|rude)\b/i;
+const COMPLAINT = /\b(terrible|awful|horrible|unacceptable|ridiculous|disgusting|worst|furious|angry|refund(ed)?|money back|compensat(e|ion)|chargeback|lawyer|complain(t|ts|ing)?|manager|disappointed|unhappy|not happy|filthy|rude|bad review)\b/i;
+// Vietnamese words carry diacritics, which \b treats as non-word characters, so match them as plain phrases.
+const COMPLAINT_VI = /(hoàn tiền|trả lại tiền|bồi thường|khiếu nại|quản lý|thất vọng|bực mình|không chấp nhận được|quá tệ|tệ quá|kinh khủng|bẩn quá)/iu;
 const THANKS = /^\s*(thanks|thank you|thx|ty|great|perfect|ok(ay)?|cool|awesome|hi|hello|hey|good (morning|evening|afternoon))[\s!.,]*$/i;
 const WHEN = /\b(tonight|tomorrow( morning| night| evening)?|this (morning|afternoon|evening)|at\s+\d{1,2}(:\d{2})?\s*(am|pm)?|around\s+\d{1,2}(:\d{2})?\s*(am|pm)?|in\s+\d+\s+(minutes?|mins?|hours?)|before\s+\d{1,2}(:\d{2})?\s*(am|pm)?|after\s+\d{1,2}(:\d{2})?\s*(am|pm)?|now|later)\b/i;
 
@@ -210,7 +212,7 @@ export function understand(text: string, catalog: Service[]): Understanding {
   }
 
   const facts = factsIn(clean);
-  const escalate = COMPLAINT.test(clean);
+  const escalate = COMPLAINT.test(clean) || COMPLAINT_VI.test(clean.normalize("NFC"));
   const smallTalk = requests.length === 0 && facts.length === 0 && !escalate && THANKS.test(clean);
   const eta = etaIn(clean);
   return { requests, facts, escalate, smallTalk: smallTalk && !eta, eta };
