@@ -62,6 +62,19 @@ test("complaints are escalated, thanks are small talk", () => {
   assert(!understand("Thanks, can I get towels?", catalog).smallTalk);
 });
 
+test("angry guests and money requests are escalated in English and Vietnamese", () => {
+  for (const msg of [
+    "This is ridiculous, I want a refund for tonight",
+    "I'd like my money back",
+    "Not happy at all, I'll be leaving a bad review",
+    "Phòng bẩn quá, tôi muốn hoàn tiền",
+    "Cho tôi gặp quản lý",
+    "Tôi rất thất vọng",
+  ]) assert(understand(msg, catalog).escalate, msg);
+  assert(!understand("Could I get two extra pillows?", catalog).escalate);
+  assert(!understand("Cho tôi thêm hai cái gối", catalog).escalate);
+});
+
 test("nothing is invented from a message that asks for nothing", () => {
   const u = understand("what time is it", catalog);
   assert.deepEqual([u.requests.length, u.facts.length, u.escalate, u.smallTalk], [0, 0, false, false]);

@@ -56,13 +56,18 @@ export function createApp(deps: AppDeps) {
 
   // ── Twilio ────────────────────────────────────────────────
   const twiml = (c: { body: (s: string, status?: number, h?: Record<string, string>) => Response }) => c.body(EMPTY_TWIML, 200, { "content-type": "text/xml" });
+  // Outside the demo every Twilio webhook must be signed. Without an auth token there is no way
+  // to tell Twilio from anyone else, so refuse rather than trust it.
+  const fromTwilio = (reqUrl: string, path: string, form: Record<string, string>, signature: string | undefined) => {
+    if (deps.demo) return true;
+    if (!deps.twilioAuthToken) return false;
+    const url = `${(deps.publicUrl ?? new URL(reqUrl).origin).replace(/\/$/, "")}${path}`;
+    return validTwilioSignature(deps.twilioAuthToken, url, form, signature);
+  };
 
   app.post("/webhooks/twilio/sms", async (c) => {
     const form = Object.fromEntries(Object.entries(await c.req.parseBody()).map(([k, v]) => [k, String(v)]));
-    if (deps.twilioAuthToken && !deps.demo) {
-      const url = `${(deps.publicUrl ?? new URL(c.req.url).origin).replace(/\/$/, "")}/webhooks/twilio/sms`;
-      if (!validTwilioSignature(deps.twilioAuthToken, url, form, c.req.header("x-twilio-signature"))) return c.text("Forbidden", 403);
-    }
+    if (!fromTwilio(c.req.url, "/webhooks/twilio/sms", form, c.req.header("x-twilio-signature"))) return c.text("Forbidden", 403);
     // The same webhook serves SMS and WhatsApp: Twilio marks WhatsApp numbers as `whatsapp:+1...`.
     const to = form.To ? parseAddress(form.To) : null;
     const hotel = to?.phone ? (to.channel === "whatsapp" ? await store.hotelByWhatsappNumber(to.phone) : await store.hotelBySmsNumber(to.phone)) : null;
@@ -76,10 +81,7 @@ export function createApp(deps: AppDeps) {
 
   app.post("/webhooks/twilio/status", async (c) => {
     const form = Object.fromEntries(Object.entries(await c.req.parseBody()).map(([k, v]) => [k, String(v)]));
-    if (deps.twilioAuthToken && !deps.demo) {
-      const url = `${(deps.publicUrl ?? new URL(c.req.url).origin).replace(/\/$/, "")}/webhooks/twilio/status`;
-      if (!validTwilioSignature(deps.twilioAuthToken, url, form, c.req.header("x-twilio-signature"))) return c.text("Forbidden", 403);
-    }
+    if (!fromTwilio(c.req.url, "/webhooks/twilio/status", form, c.req.header("x-twilio-signature"))) return c.text("Forbidden", 403);
     if (form.MessageSid && form.MessageStatus) await store.setMessageStatus(form.MessageSid, form.MessageStatus);
     return c.body(null, 204);
   });

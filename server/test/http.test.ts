@@ -127,6 +127,17 @@ test("the Twilio webhook verifies its signature and routes by the hotel's number
   assert.equal(w.sms.sent.length, 1, "a number that isn't a hotel's gets no reply");
 });
 
+test("outside the demo, Twilio webhooks are refused when no auth token is configured", async () => {
+  const w = await world();
+  const app = createApp({ store: w.store, david: w.david, demo: false });
+  const form = { From: "+14165550111", To: "+14165550100", Body: "extra towels please", MessageSid: "SMnotoken" };
+  const post = (path: string) => app.request(path, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(form) });
+  assert.equal((await post("/webhooks/twilio/sms")).status, 403);
+  assert.equal((await post("/webhooks/twilio/status")).status, 403);
+  assert.equal(w.sms.sent.length, 0);
+  assert.equal((await w.store.listRequests(w.hotel.id)).length, 0);
+});
+
 test("the status webhook updates delivery", async () => {
   const w = await world();
   const app = createApp({ store: w.store, david: w.david, demo: true });

@@ -24,6 +24,7 @@ const now = () => new Date(Date.now() + clock.offsetMs);
 const recorder = demo || !env.TWILIO_ACCOUNT_SID ? new RecordingSms() : undefined;
 const sms = recorder ?? new TwilioSms(env.TWILIO_ACCOUNT_SID!, env.TWILIO_AUTH_TOKEN!);
 if (!demo && !env.TWILIO_ACCOUNT_SID) console.warn("No TWILIO_ACCOUNT_SID: texts will be recorded, not sent.");
+if (!demo && !env.TWILIO_AUTH_TOKEN) console.warn("No TWILIO_AUTH_TOKEN: Twilio webhooks will be refused, so guests' texts will not reach David.");
 
 // The demo has no real Square: it hands out a small menu and keeps the orders it is sent.
 const demoSquare = demo ? new RecordingSquare() : undefined;
