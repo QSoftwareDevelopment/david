@@ -9,7 +9,8 @@
     "start": "tsx src/main.ts",
     "demo": "DAVID_DEMO=1 tsx src/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "sandbox": "tsx sandbox/run.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
