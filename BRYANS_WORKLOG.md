@@ -58,7 +58,9 @@ Built on `bryan/hardening-and-demo-escalation` (PR #1), so it includes those cha
   Opera reservation each stay came from instead of matching by dates.
 - The client handles paged reservation results, but the test hotel fits in one page, so paging hasn't really
   been exercised.
-- Not pushed, no PR.
+- Pushed as **draft PR #2**: https://github.com/QSoftwareDevelopment/david/pull/2. It's stacked on PR #1
+  (base `bryan/hardening-and-demo-escalation`). Merge #1 first, then point #2 at `feat/web-console`. Its
+  Vercel checks will fail the same way as #1's until Bryan has Vercel access.
 
 ---
 
