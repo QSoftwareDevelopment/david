@@ -23,6 +23,17 @@ test("a missed moment is still sent for a while, then dropped", () => {
   assert.equal(planDue(input({ now: new Date("2026-03-11T22:00:00Z") })).due.length, 0, "more than a day late");
 });
 
+test("a late catch-up never talks about an arrival that has already happened", () => {
+  // Arrival day was 2026-03-10 at 10:00; the next morning is within the grace window but the guest is already here.
+  const arrival = camp({ kind: "arrival_day", offsetDays: 0 });
+  const here = stay({ arrival: "2026-03-10", departure: "2026-03-13" });
+  assert.equal(planDue(input({ campaigns: [arrival], stays: [{ stay: here, guest: guest(), pastStays: 0 }] })).due.length, 1, "on the day");
+  assert.equal(planDue(input({ now: new Date("2026-03-11T13:00:00Z"), campaigns: [arrival], stays: [{ stay: here, guest: guest(), pastStays: 0 }] })).due.length, 0, "the day after");
+  // Pre-arrival due 2026-03-09 at 10:00, caught up on arrival day: too late.
+  const pre = camp({ kind: "pre_arrival", offsetDays: -1 });
+  assert.equal(planDue(input({ now: new Date("2026-03-10T13:00:00Z"), campaigns: [pre], stays: [{ stay: here, guest: guest(), pastStays: 0 }] })).due.length, 0, "on arrival day");
+});
+
 test("nothing is sent twice", () => {
   assert.equal(planDue(input({ sent: new Set(["c1:s1"]) })).due.length, 0);
 });

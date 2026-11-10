@@ -91,6 +91,9 @@ export function planDue(input: DueInput): { due: DueSend[]; skipped: Skipped[] }
         if (later || !newest) continue;
       }
 
+      // A late catch-up must not talk about an arrival that has already happened.
+      if ((c.kind === "pre_arrival" && local.date >= stay.arrival) || (c.kind === "arrival_day" && local.date > stay.arrival)) continue;
+
       const when = zonedInstant(targetDate(c, stay), c.sendHour, hotel.timezone);
       const ageHours = (now.getTime() - when.getTime()) / 3_600_000;
       if (ageHours < 0 || ageHours > GRACE_HOURS) continue;
